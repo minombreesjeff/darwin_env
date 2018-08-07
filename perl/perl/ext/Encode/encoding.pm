@@ -1,6 +1,6 @@
-# $Id: encoding.pm,v 1.46 2003/07/08 21:52:14 dankogai Exp $
+# $Id: encoding.pm,v 1.48 2003/12/29 02:47:16 dankogai Exp dankogai $
 package encoding;
-our $VERSION = do { my @r = (q$Revision: 1.46 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
+our $VERSION = do { my @r = (q$Revision: 1.48 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r };
 
 use Encode;
 use strict;
@@ -191,6 +191,25 @@ Will print "\xF1\xD1\xF1\xCC is the symbol of perl.\n",
 not "\x{99F1}\x{99DD} is the symbol of perl.\n".
 
 You can override this by giving extra arguments; see below.
+
+=head2 Implicit upgrading for byte strings
+
+By default, if strings operating under byte semantics and strings
+with Unicode character data are concatenated, the new string will
+be created by decoding the byte strings as I<ISO 8859-1 (Latin-1)>.
+
+The B<encoding> pragma changes this to use the specified encoding
+instead.  For example:
+
+    use encoding 'utf8';
+    my $string = chr(20000); # a Unicode string
+    utf8::encode($string);   # now it's a UTF-8 encoded byte string
+    # concatenate with another Unicode string
+    print length($string . chr(20000));
+
+Will print C<2>, because C<$string> is upgraded as UTF-8.  Without
+C<use encoding 'utf8';>, it will print C<4> instead, since C<$string>
+is three octets when interpreted as Latin-1.
 
 =head1 FEATURES THAT REQUIRE 5.8.1
 
@@ -397,13 +416,13 @@ This counterintuitive behavior has been fixed in perl 5.8.1.
 
 =head3 workaround to tr///;
 
-In perl 5.8.0, you can work aroud as follows;
+In perl 5.8.0, you can work around as follows;
 
   use encoding 'euc-jp';
   #  ....
   eval qq{ \$kana =~ tr/\xA4\xA1-\xA4\xF3/\xA5\xA1-\xA5\xF3/ };
 
-Note the C<tr//> expression is surronded by C<qq{}>.  The idea behind
+Note the C<tr//> expression is surrounded by C<qq{}>.  The idea behind
 is the same as classic idiom that makes C<tr///> 'interpolate'.
 
    tr/$from/$to/;            # wrong!

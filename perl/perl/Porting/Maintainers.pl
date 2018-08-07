@@ -6,6 +6,8 @@
 # and in CPAN.  Those that have a CPAN existence, have the CPAN
 # attribute set to true.
 
+package Maintainers;
+
 %Maintainers =
 	(
 	'abergman'	=> 'Arthur Bergman <abergman@cpan.org>',
@@ -16,6 +18,7 @@
 	'dankogai'	=> 'Dan Kogai <dankogai@cpan.org>',
 	'dconway'	=> 'Damian Conway <dconway@cpan.org>',
 	'drolsky'	=> 'Dave Rolsky <drolsky@cpan.org>',
+	'elizabeth'	=> 'Elizabeth Mattijsen <liz@dijkmat.nl>',
 	'gbarr'		=> 'Graham Barr <gbarr@cpan.org>',
 	'gaas'		=> 'Gisle Aas <gaas@cpan.org>',
 	'gsar'		=> 'Gurusamy Sarathy <gsar@activestate.com>',
@@ -25,14 +28,20 @@
 	'jstowe'	=> 'Jonathan Stowe <jstowe@cpan.org>',
 	'jv'		=> 'Johan Vromans <jv@cpan.org>',
 	'kwilliams'	=> 'Ken Williams <kwilliams@cpan.org>',
+	'laun'		=> 'Wolfgang Laun <Wolfgang.Laun@alcatel.at>',
 	'lstein'	=> 'Lincoln D. Stein <lds@cpan.org>',
 	'marekr'	=> 'Marek Rouchal <marekr@cpan.org>',
-	'mjd'		=> 'Mark-Jason Dominus <mjd@cpan.org>',
+	'mhx'		=> 'Marcus Holland-Moritz <mhx@cpan.org>',
+	'mjd'		=> 'Mark-Jason Dominus <mjd@plover.com>',
 	'muir'		=> 'David Muir Sharnoff <muir@cpan.org>',
 	'neilb'		=> 'Neil Bowers <neilb@cpan.org>',
+	'ni-s'		=> 'Nick Ing-Simmons <nick@ing-simmons.net>',
 	'p5p'		=> 'perl5-porters <perl5-porters@perl.org>',
+	'perlfaq'	=> 'perlfaq-workers <perlfaq-workers@perl.org>',
 	'petdance'	=> 'Andy Lester <petdance@cpan.org>',
 	'pmqs'		=> 'Paul Marquess <pmqs@cpan.org>',
+	'pvhp'		=> 'Peter Prymmer <pvhp@best.com>',
+	'rgarcia'	=> 'Rafael Garcia-Suarez <rgarcia@cpan.org>',
 	'rmbarker'	=> 'Robin Barker <rmbarker@cpan.org>',
 	'rra'		=> 'Russ Allbery <rra@cpan.org>',
 	'sadahiro'	=> 'SADAHIRO Tomoyuki <SADAHIRO@cpan.org>',
@@ -71,6 +80,13 @@
 		'CPAN'		=> 0,
 		},
 
+	'base' =>
+		{
+		'MAINTAINER'	=> 'mschwern',
+		'FILES'		=> q[lib/base.pm lib/fields.pm lib/base],
+		'CPAN'		=> 1,
+		},
+
 	'bignum' =>
 		{
 		'MAINTAINER'	=> 'tels',
@@ -99,6 +115,13 @@
 		'CPAN'		=> 1,
 		},
 
+	'Cwd' =>
+		{
+		'MAINTAINER'	=> 'kwilliams',
+		'FILES'		=> q[ext/Cwd lib/Cwd.pm],
+		'CPAN'		=> 1,
+		},
+
 	'Data::Dumper' =>
 		{
 		'MAINTAINER'	=> 'ilyam', # Not gsar.
@@ -115,7 +138,7 @@
 
 	'Devel::PPPort' =>
 		{
-		'MAINTAINER'	=> 'pmqs',
+		'MAINTAINER'	=> 'mhx',
 		'FILES'		=> q[ext/Devel/PPPort],
 		'CPAN'		=> 1,
 		},
@@ -123,7 +146,7 @@
 	'Digest' =>
 		{
 		'MAINTAINER'	=> 'gaas',
-		'FILES'		=> q[lib/Digest.{pm,t}],
+		'FILES'		=> q[lib/Digest.pm lib/Digest],
 		'CPAN'		=> 1,
 		},
 
@@ -154,6 +177,13 @@
 		'FILES'		=> q[lib/ExtUtils/{Command,Install,Installed,Liblist,MakeMaker,Manifest,Mkbootstrap,Mksymlists,MM*,MY,Packlist,testlib}.pm lib/ExtUtils/{Command,Liblist,MakeMaker}
 				     lib/ExtUtils/t t/lib/MakeMaker t/lib/TieIn.pm t/lib/TieOut.pm],
 		'CPAN'		=> 1,
+		},
+
+	'faq' =>
+		{
+		'MAINTAINER'	=> 'perlfaq',
+		'FILES'		=> q[pod/perlfaq*],
+		'CPAN'		=> 0,
 		},
 
 	'File::Spec' =>
@@ -222,7 +252,7 @@
 		'CPAN'		=> 1,
 		},
 
-	'Scalar-List-Util' =>
+	'Scalar-List-Utils' =>
 		{
 		'MAINTAINER'	=> 'gbarr',
 		'FILES'		=> q[ext/List/Util],
@@ -293,17 +323,68 @@
 		'CPAN'		=> 1,
 		},
 
+	'perlebcdic' =>
+		{
+		'MAINTAINER'	=> 'pvhp',
+		'FILES'		=> q[pod/perlebcdic.pod],
+		'CPAN'		=> 0,
+		},
+
 	'PerlIO' =>
 		{
 		'MAINTAINER'	=> 'p5p',
-		'FILES'		=> q[ext/PerlIO lib/PerlIO],
+		'FILES'		=> q[ext/PerlIO],
+		'CPAN'		=> 0,
+		},
+
+	'perlio-doc' =>
+		{
+		'MAINTAINER'	=> 'ni-s',
+		'FILES'		=> q[pod/perlapio.pod
+				     pod/perliol.pod
+				     lib/PerlIO.pm],
+		'CPAN'		=> 0,
+		},
+
+	'PerlIO::via::QuotedPrint' =>
+		{
+		'MAINTAINER'	=> 'elizabeth',
+		'FILES'		=> q[lib/PerlIO/via/QuotedPrint.pm
+				     lib/PerlIO/via/t/QuotedPrint.t],
 		'CPAN'		=> 1,
 		},
 
-	'Pod::Find' =>
+	'perlreftut' =>
 		{
+		'MAINTAINER'	=> 'mjd',
+		'FILES'		=> q[pod/perlreftut.pod],
+		'CPAN'		=> 0,
+		},
+
+	'perlpacktut' =>
+		{
+		'MAINTAINER'	=> 'laun',
+		'FILES'		=> q[pod/perlpacktut.pod],
+		'CPAN'		=> 0,
+		},
+
+	'perlpodspec' =>
+		{
+		'MAINTAINER'	=> 'sburke',
+		'FILES'		=> q[pod/perlpodspec.pod],
+		'CPAN'		=> 0,
+		},
+
+	'perlthrtut' =>
+		{
+		'MAINTAINER'	=> 'elizabeth',
+		'FILES'		=> q[pod/perlthrtut.pod],
+		'CPAN'		=> 0,
+		},
+
+	'PodParser' => {
 		'MAINTAINER'	=> 'marekr',
-		'FILES'		=> q[lib/Pod/Find.pm t/pod/find.t],
+		'FILES' => q[lib/Pod/{InputObjects,Parser,ParseUtils,Select,PlainText,Usage,Checker,Find}.pm pod/pod{select,2usage,checker}.PL t/pod/testcmp.pl t/pod/testp2pt.pl t/pod/testpchk.pl t/pod/emptycmd.* t/pod/find.t t/pod/for.* t/pod/headings.* t/pod/include.* t/pod/included.* t/pod/lref.* t/pod/multiline_items.* t/pod/nested_items.* t/pod/nested_seqs.* t/pod/oneline_cmds.* t/pod/poderrs.* t/pod/pod2usage.* t/pod/podselect.* t/pod/special_seqs.*],
 		'CPAN'		=> 1,
 		},
 
@@ -317,7 +398,7 @@
 	'podlators' =>
 		{
 		'MAINTAINER'	=> 'rra',
-		'FILES'		=> q[lib/Pod/{Checker,Find,Html,InputObjects,Man,ParseLink,Parser,ParseUtils,PlainText,Select,Text,Text/{Color,Overstrike,Termcap},Usage}.pm pod/pod2man.PL pod/pod2text.PL lib/Pod/t/{basic.*,{basic,man,parselink,text*}.t} lib/Pod/t/{InputObjects,Select,Usage,utils}.t],
+		'FILES'		=> q[lib/Pod/{Html,Man,ParseLink,Text,Text/{Color,Overstrike,Termcap}}.pm pod/pod2man.PL pod/pod2text.PL lib/Pod/t/{basic.*,{man,parselink,text*}.t}],
 		'CPAN'		=> 1,
 		},
 
@@ -331,8 +412,8 @@
 	'Pod::Plainer' =>
 		{
 		'MAINTAINER'	=> 'rmbarker',
-		'FILES'		=> q[lib/Pod/Plainer.pm],
-		'CPAN'		=> 1,
+		'FILES'		=> q[lib/Pod/Plainer.pm t/pod/plainer.t],
+		'CPAN'		=> 0,
 		},
 
 	'Safe' =>
@@ -351,7 +432,7 @@
 
 	'Switch' =>
 		{
-		'MAINTAINER'	=> 'dconway',
+		'MAINTAINER'	=> 'rgarcia',
 		'FILES'		=> q[lib/Switch.pm lib/Switch],
 		'CPAN'		=> 1,
 		},
@@ -380,7 +461,7 @@
 
 	'Test' =>
 		{
-		'MAINTAINER'	=> 'mschwern',
+		'MAINTAINER'	=> 'sburke',
 		'FILES'		=> q[lib/Test.pm lib/Test/t],
 		'CPAN'		=> 1,
 		},
@@ -426,7 +507,7 @@
 		{
 		'MAINTAINER' => 'abergman',
 		'FILES'	 => q[ext/threads],
-		'CPAN'		=> 1,
+		'CPAN'		=> 0,
 		},
 
 	'Tie::File' =>
@@ -484,6 +565,13 @@
 		{
 		'MAINTAINER'	=> 'gsar',
 		'FILES'		=> q[win32 README.win32 lib/Win32.pod t/win32],
+		'CPAN'		=> 0,
+		},
+
+	's2p' =>
+		{
+		'MAINTAINER'	=> 'laun',
+		'FILES'		=> q[x2p/s2p.PL],
 		'CPAN'		=> 0,
 		},
 

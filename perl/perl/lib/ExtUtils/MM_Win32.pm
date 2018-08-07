@@ -29,7 +29,7 @@ use vars qw(@ISA $VERSION $BORLAND $GCC $DMAKE $NMAKE);
 require ExtUtils::MM_Any;
 require ExtUtils::MM_Unix;
 @ISA = qw( ExtUtils::MM_Any ExtUtils::MM_Unix );
-$VERSION = '1.08';
+$VERSION = '1.09';
 
 $ENV{EMXSHELL} = 'sh'; # to run `commands`
 
@@ -181,7 +181,6 @@ sub init_others {
     $self->{TEST_F}   ||= '$(PERLRUN) -MExtUtils::Command -e test_f';
     $self->{DEV_NULL} ||= '> NUL';
 
-    # technically speaking, these should be in init_main()
     $self->{LD}     ||= $Config{ld} || 'link';
     $self->{AR}     ||= $Config{ar} || 'lib';
 
@@ -490,14 +489,14 @@ sub escape_newlines {
 
 =item max_exec_len
 
-Using 31K, a safe number gotten from Windows 2000.
+nmake 1.50 limits command length to 2048 characters.
 
 =cut
 
 sub max_exec_len {
     my $self = shift;
 
-    return $self->{_MAX_EXEC_LEN} ||= 31 * 1024;
+    return $self->{_MAX_EXEC_LEN} ||= 2 * 1024;
 }
 
 

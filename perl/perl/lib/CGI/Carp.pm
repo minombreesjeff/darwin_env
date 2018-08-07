@@ -243,6 +243,8 @@ non-overridden program name
      former isn't working in some people's hands.  There is no such thing
      as reliable exception handling in Perl.
 
+1.27 Replaced tell STDOUT with bytes=tell STDOUT.
+
 =head1 AUTHORS
 
 Copyright 1995-2002, Lincoln D. Stein.  All rights reserved.  
@@ -279,7 +281,7 @@ use File::Spec;
 
 $main::SIG{__WARN__}=\&CGI::Carp::warn;
 
-$CGI::Carp::VERSION    = '1.26';
+$CGI::Carp::VERSION    = '1.27';
 $CGI::Carp::CUSTOM_MSG = undef;
 
 
@@ -440,13 +442,13 @@ and the time and date of the error.
 END
   ;
   my $mod_perl = exists $ENV{MOD_PERL};
-  print STDOUT "Content-type: text/html\n\n" 
-    unless $mod_perl;
 
   warningsToBrowser(1);    # emit warnings before dying
 
   if ($CUSTOM_MSG) {
     if (ref($CUSTOM_MSG) eq 'CODE') {
+      print STDOUT "Content-type: text/html\n\n" 
+        unless $mod_perl;
       &$CUSTOM_MSG($msg); # nicer to perl 5.003 users
       return;
     } else {
@@ -490,7 +492,14 @@ END
       $r->custom_response(500,$mess);
     }
   } else {
-    print STDOUT $mess;
+    my $bytes_written = eval{tell STDOUT};
+    if (defined $bytes_written && $bytes_written > 0) {
+        print STDOUT $mess;
+    }
+    else {
+        print STDOUT "Content-type: text/html\n\n";
+        print STDOUT $mess;
+    }
   }
 }
 

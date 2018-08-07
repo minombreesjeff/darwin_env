@@ -2,14 +2,6 @@
 
 perlhist - the Perl history records
 
-=begin RCS
-
-#
-# $Id: perlhist.pod,v 1.2 2000/01/24 11:44:47 jhi Exp $
-#
-
-=end RCS
-
 =head1 DESCRIPTION
 
 This document aims to record the Perl source code releases.
@@ -32,7 +24,9 @@ Perl history in brief, by Larry Wall:
 
 Larry Wall, Andy Dougherty, Tom Christiansen, Charles Bailey, Nick
 Ing-Simmons, Chip Salzenberg, Tim Bunce, Malcolm Beattie, Gurusamy
-Sarathy, Graham Barr, Jarkko Hietaniemi.
+Sarathy, Graham Barr, Jarkko Hietaniemi, Hugo van der Sanden,
+Michael Schwern, Rafael Garcia-Suarez, Nicholas Clark, Richard Clamp,
+Leon Brocard.
 
 =head2 PUMPKIN?
 
@@ -74,6 +68,7 @@ the strings?).
           1.001..10     1988-Jan-30
           1.011..14     1988-Feb-02
  Schwern  1.0.15        2002-Dec-18     Modernization
+ Richard  1.0.16        2003-Dec-18
 
  Larry   2.000          1988-Jun-05
 
@@ -325,6 +320,9 @@ the strings?).
           5.005_03-MT5  1999-Jan-28
           5.005_03-MT6  1999-Mar-05
           5.005_03      1999-Mar-28
+ Leon     5.005_04-RC1  2004-Feb-05
+          5.005_04-RC2  2004-Feb-18
+          5.005_04      2004-Feb-23
 
  Sarathy  5.005_50      1998-Jul-26     The 5.6 development track.
           5.005_51      1998-Aug-10
@@ -354,6 +352,8 @@ the strings?).
           5.6.1-TRIAL3  2001-Mar-19
           5.6.1-foolish 2001-Apr-01     The "fools-gold" release.
           5.6.1         2001-Apr-08
+ Rafael   5.6.2-RC1     2003-Nov-08
+          5.6.2         2003-Nov-15     Fix new build issues
 
  Jarkko   5.7.0         2000-Sep-02     The 5.7 track: Development.
           5.7.1         2001-Apr-09
@@ -366,6 +366,20 @@ the strings?).
           5.8.1-RC1     2003-Jul-10
           5.8.1-RC2     2003-Jul-11
           5.8.1-RC3     2003-Jul-30
+          5.8.1-RC4     2003-Aug-01
+          5.8.1-RC5     2003-Sep-22
+          5.8.1         2003-Sep-25
+ Nicholas 5.8.2-RC1     2003-Oct-27
+          5.8.2-RC2     2003-Nov-03
+          5.8.2         2003-Nov-05
+          5.8.3-RC1     2004-Jan-07
+          5.8.3         2004-Jan-14
+          5.8.4-RC1     2004-Apr-05
+          5.8.4-RC2     2004-Apr-15
+          5.8.4         2004-Apr-21
+
+ Hugo     5.9.0         2003-Oct-27
+ Rafael   5.9.1         2004-Mar-16
 
 =head2 SELECTED RELEASE SIZES
 

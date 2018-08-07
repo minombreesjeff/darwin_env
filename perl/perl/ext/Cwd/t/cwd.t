@@ -1,18 +1,17 @@
 #!./perl
 
+use Cwd;
 BEGIN {
     chdir 't' if -d 't';
-    @INC = '../lib';
 }
 
 use Config;
-use Cwd;
 use strict;
 use warnings;
 use File::Spec;
 use File::Path;
 
-use Test::More tests => 16;
+use Test::More tests => 20;
 
 my $IsVMS = $^O eq 'VMS';
 my $IsMacOS = $^O eq 'MacOS';
@@ -90,29 +89,20 @@ SKIP: {
     }
 }
 
-my $Top_Test_Dir = '_ptrslt_';
-my $Test_Dir     = "$Top_Test_Dir/_path_/_to_/_a_/_dir_";
-my $want = "t/$Test_Dir";
-if( $IsVMS ) {
-    # translate the unixy path to VMSish
-    $want =~ s|/|\.|g;
-    $want .= '\]';
-    $want = '((?i)' . $want . ')';  # might be ODS-2 or ODS-5
-} elsif ( $IsMacOS ) {
-    $_ = ":$_" for ($Top_Test_Dir, $Test_Dir);
-    s|/|:|g, s|$|:| for ($want, $Test_Dir);
+my @test_dirs = qw{_ptrslt_ _path_ _to_ _a_ _dir_};
+my $Test_Dir     = File::Spec->catdir(@test_dirs);
+
+mkpath([$Test_Dir], 0, 0777);
+Cwd::chdir $Test_Dir;
+
+foreach my $func (qw(cwd getcwd fastcwd fastgetcwd)) {
+  my $result = eval "$func()";
+  is $@, '';
+  dir_ends_with( $result, $Test_Dir, "$func()" );
 }
 
-mkpath(["$Test_Dir"], 0, 0777);
-Cwd::chdir "$Test_Dir";
-
-like(cwd(),        qr|$want$|, 'chdir() + cwd()');
-like(getcwd(),     qr|$want$|, '        + getcwd()');    
-like(fastcwd(),    qr|$want$|, '        + fastcwd()');
-like(fastgetcwd(), qr|$want$|, '        + fastgetcwd()');
-
 # Cwd::chdir should also update $ENV{PWD}
-like($ENV{PWD}, qr|$want$|,      'Cwd::chdir() updates $ENV{PWD}');
+dir_ends_with( $ENV{PWD}, $Test_Dir, 'Cwd::chdir() updates $ENV{PWD}' );
 my $updir = File::Spec->updir;
 Cwd::chdir $updir;
 print "#$ENV{PWD}\n";
@@ -125,16 +115,14 @@ print "#$ENV{PWD}\n";
 Cwd::chdir $updir;
 print "#$ENV{PWD}\n";
 
-rmtree([$Top_Test_Dir], 0, 0);
+rmtree($test_dirs[0], 0, 0);
 
-if ($IsVMS) {
-    like($ENV{PWD}, qr|\b((?i)t)\]$|);
-}
-elsif ($IsMacOS) {
-    like($ENV{PWD}, qr|\bt:$|);
-}
-else {
-    like($ENV{PWD}, qr|\bt$|);
+{
+  my $check = ($IsVMS   ? qr|\b((?i)t)\]$| :
+	       $IsMacOS ? qr|\bt:$| :
+			  qr|\bt$| );
+  
+  like($ENV{PWD}, $check);
 }
 
 SKIP: {
@@ -150,6 +138,22 @@ SKIP: {
     like($abs_path,      qr|$want$|);
     like($fast_abs_path, qr|$want$|);
 
-    rmtree([$Top_Test_Dir], 0, 0);
+    rmtree($test_dirs[0], 0, 0);
     unlink "linktest";
 }
+
+#############################################
+# These two routines give us sort of a poor-man's cross-platform
+# directory comparison routine.
+
+sub bracketed_form {
+  return join '', map "[$_]", 
+    grep length, File::Spec->splitdir(File::Spec->canonpath( shift() ));
+}
+
+sub dir_ends_with {
+  my ($dir, $expect) = (shift, shift);
+  my $bracketed_expect = quotemeta bracketed_form($expect);
+  like( bracketed_form($dir), qr|$bracketed_expect$|i, (@_ ? shift : ()) );
+}
+

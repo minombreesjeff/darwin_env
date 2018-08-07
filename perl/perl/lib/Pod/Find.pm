@@ -1,7 +1,7 @@
 #############################################################################  
 # Pod/Find.pm -- finds files containing POD documentation
 #
-# Author: Marek Rouchal <marek@saftsack.fs.uni-bayreuth.de>
+# Author: Marek Rouchal <marekr@cpan.org>
 # 
 # Copyright (C) 1999-2000 by Marek Rouchal (and borrowing code
 # from Nick Ing-Simmon's PodToHtml). All rights reserved.
@@ -13,7 +13,7 @@
 package Pod::Find;
 
 use vars qw($VERSION);
-$VERSION = 0.23;   ## Current version of this package
+$VERSION = 0.24;   ## Current version of this package
 require  5.005;   ## requires this Perl version or later
 use Carp;
 
@@ -446,13 +446,14 @@ sub pod_where {
         if $options{'-verbose'};
       next Dir;
     }
-    # for some strange reason the path on MacOS/darwin is
+    # for some strange reason the path on MacOS/darwin/cygwin is
     # 'pods' not 'pod'
     # this could be the case also for other systems that
     # have a case-tolerant file system, but File::Spec
-    # does not recognize 'darwin' yet
-    #if(File::Spec->case_tolerant && -d File::Spec->catdir($dir,'pods')) {
-    if($^O =~ /macos|darwin/i && -d File::Spec->catdir($dir,'pods')) {
+    # does not recognize 'darwin' yet. And cygwin also has "pods",
+    # but is not case tolerant. Oh well...
+    if((File::Spec->case_tolerant || $^O =~ /macos|darwin|cygwin/i)
+     && -d File::Spec->catdir($dir,'pods')) {
       $dir = File::Spec->catdir($dir,'pods');
       redo Dir;
     }
@@ -497,7 +498,9 @@ sub contains_pod {
 
 =head1 AUTHOR
 
-Marek Rouchal E<lt>marek@saftsack.fs.uni-bayreuth.deE<gt>,
+Please report bugs using L<http://rt.cpan.org>.
+
+Marek Rouchal E<lt>marekr@cpan.orgE<gt>,
 heavily borrowing code from Nick Ing-Simmons' PodToHtml.
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt> provided

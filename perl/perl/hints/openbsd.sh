@@ -11,6 +11,11 @@
 # OpenBSD has a better malloc than perl...
 test "$usemymalloc" || usemymalloc='n'
 
+# malloc wrap works
+case "$usemallocwrap" in
+'') usemallocwrap='define' ;;
+esac
+
 # Currently, vfork(2) is not a real win over fork(2).
 usevfork="$undef"
 
@@ -113,8 +118,8 @@ $define|true|[yY]*)
 	;;
 	esac
 	case "$osvers" in
-	[012].*|3.[0-3])
-        	# Broken at least up to OpenBSD 3.2, we'll see about 3.3.
+	[012].*|3.[0-5])
+        	# Broken at least up to OpenBSD 3.5, we'll see about 3.6
 		d_getservbyname_r=$undef ;;
 	esac
 esac

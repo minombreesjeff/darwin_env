@@ -2,11 +2,11 @@ package POSIX;
 
 our(@ISA, %EXPORT_TAGS, @EXPORT_OK, $AUTOLOAD) = ();
 
+our $VERSION = "1.08";
+
 use AutoLoader;
 
 use XSLoader ();
-
-our $VERSION = "1.05" ;
 
 # Grandfather old foo_h form to new :foo_h form
 my $loaded;
@@ -623,7 +623,7 @@ sub chdir {
 }
 
 sub chown {
-    usage "chown(filename, uid, gid)" if @_ != 3;
+    usage "chown(uid, gid, filename)" if @_ != 3;
     CORE::chown($_[0], $_[1], $_[2]);
 }
 
@@ -921,6 +921,7 @@ for (values %EXPORT_TAGS) {
 		gmtime
 		isatty
 		kill
+		lchown
 		link
 		localtime
 		log

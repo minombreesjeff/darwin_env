@@ -14,12 +14,14 @@ use B qw(class main_root main_start main_cv svref_2object opnumber perlstring
 	 OPpLVAL_INTRO OPpOUR_INTRO OPpENTERSUB_AMPER OPpSLICE OPpCONST_BARE
 	 OPpTRANS_SQUASH OPpTRANS_DELETE OPpTRANS_COMPLEMENT OPpTARGET_MY
 	 OPpCONST_ARYBASE OPpEXISTS_SUB OPpSORT_NUMERIC OPpSORT_INTEGER
-	 OPpSORT_REVERSE
+	 OPpSORT_REVERSE OPpSORT_INPLACE
 	 SVf_IOK SVf_NOK SVf_ROK SVf_POK SVpad_OUR SVf_FAKE SVs_RMG SVs_SMG
          CVf_METHOD CVf_LOCKED CVf_LVALUE
 	 PMf_KEEP PMf_GLOBAL PMf_CONTINUE PMf_EVAL PMf_ONCE PMf_SKIPWHITE
 	 PMf_MULTILINE PMf_SINGLELINE PMf_FOLD PMf_EXTENDED);
-$VERSION = 0.64;
+# Not sure if I really should have this as maint's version, given that Deparse
+# differs from blead. (latter has // support)
+$VERSION = 0.66;
 use strict;
 use vars qw/$AUTOLOAD/;
 use warnings ();
@@ -1085,7 +1087,8 @@ sub lineseq {
     my $limit_seq;
     if (defined $root) {
 	$limit_seq = $out_seq;
-	my $nseq = $self->find_scope_st($root->sibling) if ${$root->sibling};
+	my $nseq;
+	$nseq = $self->find_scope_st($root->sibling) if ${$root->sibling};
 	$limit_seq = $nseq if !defined($limit_seq)
 			   or defined($nseq) && $nseq < $limit_seq;
     }
@@ -2126,8 +2129,9 @@ sub listop {
     return $name if null $kid;
     my $first;
     $name = "socketpair" if $name eq "sockpair";
-    if (defined prototype("CORE::$name")
-	&& prototype("CORE::$name") =~ /^;?\*/
+    my $proto = prototype("CORE::$name");
+    if (defined $proto
+	&& $proto =~ /^;?\*/
 	&& $kid->name eq "rv2gv") {
 	$first = $self->deparse($kid->first, 6);
     }
@@ -2140,6 +2144,10 @@ sub listop {
     $first = "+$first" if not $parens and substr($first, 0, 1) eq "(";
     push @exprs, $first;
     $kid = $kid->sibling;
+    if (defined $proto && $proto =~ /^\*\*/ && $kid->name eq "rv2gv") {
+	push @exprs, $self->deparse($kid->first, 6);
+	$kid = $kid->sibling;
+    }
     for (; !null($kid); $kid = $kid->sibling) {
 	push @exprs, $self->deparse($kid, 6);
     }
@@ -2302,6 +2310,10 @@ sub indirop {
 	$expr = $self->deparse($kid, 6);
 	push @exprs, $expr;
     }
+    if ($name eq "sort" && ($op->private & OPpSORT_INPLACE)) {
+	return "$exprs[0] = sort $indir $exprs[0]";
+    }
+
     my $args = $indir . join(", ", @exprs);
     if ($indir ne "" and $name eq "sort") {
 	# We don't want to say "sort(f 1, 2, 3)", since perl -w will
@@ -2677,13 +2689,20 @@ sub pp_gv {
 sub pp_aelemfast {
     my $self = shift;
     my($op, $cx) = @_;
-    my $gv = $self->gv_or_padgv($op);
-    my $name = $self->gv_name($gv);
-    $name = $self->{'curstash'}."::$name"
-	if $name !~ /::/ && $self->lex_in_scope('@'.$name);
+    my $name;
+    if ($op->flags & OPf_SPECIAL) { # optimised PADAV
+	$name = $self->padname($op->targ);
+	$name =~ s/^@/\$/;
+    }
+    else {
+	my $gv = $self->gv_or_padgv($op);
+	$name = $self->gv_name($gv);
+	$name = $self->{'curstash'}."::$name"
+	    if $name !~ /::/ && $self->lex_in_scope('@'.$name);
+	$name = '$' . $name;
+    }
 
-    return "\$" . $name . "[" .
-		  ($op->private + $self->{'arybase'}) . "]";
+    return $name . "[" .  ($op->private + $self->{'arybase'}) . "]";
 }
 
 sub rv2x {
@@ -3904,8 +3923,9 @@ sub pure_string {
     elsif (is_scalar($op) || $type =~ /^[ah]elem$/) {
 	return 1;
     }
-    elsif ($type eq "null" and not null $op->first and
-	   $op->first->name eq "null" and not null $op->first->first and
+    elsif ($type eq "null" and $op->can('first') and not null $op->first and
+	   $op->first->name eq "null" and $op->first->can('first')
+	   and not null $op->first->first and
 	   $op->first->first->name eq "aelemfast") {
 	return 1;
     }

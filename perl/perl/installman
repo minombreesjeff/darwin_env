@@ -67,7 +67,7 @@ $opts{verbose} ||= $opts{V} || $opts{notify};
 -x "t/perl$Config{exe_ext}"		|| warn "WARNING: You've never run 'make test'!!!",
 	"  (Installing anyway.)\n";
 
-$packlist = ExtUtils::Packlist->new("$opts{destdir}/$Config{installarchlib}/.packlist");
+$packlist = ExtUtils::Packlist->new("$opts{destdir}$Config{installarchlib}/.packlist");
 
 
 # Install the main pod pages.
@@ -141,6 +141,25 @@ sub pod2man {
 	next if (($tmp = $mod) =~ s/\.pm$/.pod/ && -f $tmp);
 	next if $mod =~ m:/t/:; # no pods from test directories 
 	next if ($manpage eq 'Pod/Functions.pm'); #### Used only by pod itself
+
+	# Skip files without pod docs
+	my $has_pod;
+	if (open T, $mod)
+	{
+	    local $_;
+	    while (<T>)
+	    {
+		++$has_pod and last if /^=(?:head\d+|item|pod)\b/;
+	    }
+
+	    close T;
+	}
+
+	unless ($has_pod)
+	{
+	    warn "no documentation in $mod\n";
+	    next;
+	}
 
 	# Convert name from  File/Basename.pm to File::Basename.3 format,
 	# if necessary.

@@ -20,7 +20,7 @@ use vars qw($VERSION @ISA
 
 use ExtUtils::MakeMaker qw($Verbose neatvalue);
 
-$VERSION = '1.39';
+$VERSION = '1.42';
 
 require ExtUtils::MM_Any;
 @ISA = qw(ExtUtils::MM_Any);
@@ -294,6 +294,7 @@ clean :: clean_subdirs
     push(@otherfiles, $attribs{FILES}) if $attribs{FILES};
     push(@otherfiles, qw[./blib $(MAKE_APERL_FILE) 
                          $(INST_ARCHAUTODIR)/extralibs.all
+                         $(INST_ARCHAUTODIR)/extralibs.ld
 			 perlmain.c tmon.out mon.out so_locations pm_to_blib
 			 *$(OBJ_EXT) *$(LIB_EXT) perl.exe perl perl$(EXE_EXT)
 			 $(BOOTSTRAP) $(BASEEXT).bso
@@ -1030,8 +1031,6 @@ sub dynamic {
 
     my($self) = shift;
     '
-## $(INST_PM) has been moved to the all: target.
-## It remains here for awhile to allow for old usage: "make dynamic"
 dynamic :: $(FIRST_MAKEFILE) $(INST_DYNAMIC) $(INST_BOOT)
 	$(NOECHO) $(NOOP)
 ';
@@ -1670,7 +1669,7 @@ sub init_DIRFILESEP {
 
 Initializes AR, AR_STATIC_ARGS, BASEEXT, CONFIG, DISTNAME, DLBASE,
 EXE_EXT, FULLEXT, FULLPERL, FULLPERLRUN, FULLPERLRUNINST, INST_*,
-INSTALL*, INSTALLDIRS, LD, LIB_EXT, LIBPERL_A, MAP_TARGET, NAME,
+INSTALL*, INSTALLDIRS, LIB_EXT, LIBPERL_A, MAP_TARGET, NAME,
 OBJ_EXT, PARENT_NAME, PERL, PERL_ARCHLIB, PERL_INC, PERL_LIB,
 PERL_SRC, PERLRUN, PERLRUNINST, PREFIX, VERSION,
 VERSION_SYM, XS_VERSION.
@@ -1871,7 +1870,6 @@ usually solves this kind of problem.
     $self->{AR_STATIC_ARGS} ||= "cr";
 
     # These should never be needed
-    $self->{LD} ||= 'ld';
     $self->{OBJ_EXT} ||= '.o';
     $self->{LIB_EXT} ||= '.a';
 
@@ -1888,7 +1886,7 @@ usually solves this kind of problem.
 
 =item init_others
 
-Initializes EXTRALIBS, BSLOADLIBS, LDLOADLIBS, LIBS, LD_RUN_PATH,
+Initializes EXTRALIBS, BSLOADLIBS, LDLOADLIBS, LIBS, LD_RUN_PATH, LD,
 OBJECT, BOOTDEP, PERLMAINCC, LDFROM, LINKTYPE, SHELL, NOOP,
 FIRST_MAKEFILE, MAKEFILE_OLD, NOECHO, RM_F, RM_RF, TEST_F,
 TOUCH, CP, MV, CHMOD, UMASK_NULL, ECHO, ECHO_N
@@ -1897,6 +1895,8 @@ TOUCH, CP, MV, CHMOD, UMASK_NULL, ECHO, ECHO_N
 
 sub init_others {	# --- Initialize Other Attributes
     my($self) = shift;
+
+    $self->{LD} ||= 'ld';
 
     # Compute EXTRALIBS, BSLOADLIBS and LDLOADLIBS from $self->{LIBS}
     # Lets look at $self->{LIBS} carefully: It may be an anon array, a string or
@@ -2322,7 +2322,10 @@ sub init_PERL {
 
     # Build up a set of file names (not command names).
     my $thisperl = $self->canonpath($^X);
-    $thisperl .= $Config{exe_ext} unless $thisperl =~ m/$Config{exe_ext}$/i;
+    $thisperl .= $Config{exe_ext} unless 
+                # VMS might have a file version # at the end
+      $Is_VMS ? $thisperl =~ m/$Config{exe_ext}(;\d+)?$/i
+              : $thisperl =~ m/$Config{exe_ext}$/i;
 
     # We need a relative path to perl when in the core.
     $thisperl = $self->abs2rel($thisperl) if $self->{PERL_CORE};
@@ -2346,8 +2349,15 @@ sub init_PERL {
     # don't check if perl is executable, maybe they have decided to
     # supply switches with perl
 
+    # When built for debugging, VMS doesn't create perl.exe but ndbgperl.exe.
+    my $perl_name = 'perl';
+    $perl_name = 'ndbgperl' if $Is_VMS && 
+      defined $Config{usevmsdebug} && $Config{usevmsdebug} eq 'define';
+
+    # XXX This logic is flawed.  If "miniperl" is anywhere in the path
+    # it will get confused.  It should be fixed to work only on the filename.
     # Define 'FULLPERL' to be a non-miniperl (used in test: target)
-    ($self->{FULLPERL} = $self->{PERL}) =~ s/miniperl/perl/i
+    ($self->{FULLPERL} = $self->{PERL}) =~ s/miniperl/$perl_name/i
 	unless $self->{FULLPERL};
 
     # Little hack to get around VMS's find_perl putting "MCR" in front
@@ -2597,13 +2607,21 @@ sub installbin {
 	$fromto{$from}=$to;
     }
     @to   = values %fromto;
+
+    my $fixin;
+    if( $Is_Win32 ) {
+        $fixin = $self->{PERL_CORE} ? '$(PERLRUN) ../../win32/bin/pl2bat.pl'
+                                    : 'pl2bat.bat';
+    }
+    else {
+        $fixin = q{$(PERLRUN) "-MExtUtils::MY" -e "MY->fixin(shift)"};
+    }
+
     push(@m, qq{
 EXE_FILES = @{$self->{EXE_FILES}}
 
-} . ($Is_Win32
-  ? q{FIXIN = pl2bat.bat
-} : q{FIXIN = $(PERLRUN) "-MExtUtils::MY" -e "MY->fixin(shift)"
-}).qq{
+FIXIN = $fixin
+
 pure_all :: @to
 	\$(NOECHO) \$(NOOP)
 
@@ -2751,7 +2769,7 @@ $(MAKE_APERL_FILE) : $(FIRST_MAKEFILE)
     require File::Find;
     File::Find::find(sub {
 	return unless m/\Q$self->{LIB_EXT}\E$/;
-	return if m/^libperl/;
+	return if m/^libperl/ or m/^perl\Q$self->{LIB_EXT}\E$/;
 	# Skip purified versions of libraries (e.g., DynaLoader_pure_p1_c0_032.a)
 	return if m/_pure_\w+_\w+_\w+\.\w+$/ and -f "$File::Find::dir/.pure";
 

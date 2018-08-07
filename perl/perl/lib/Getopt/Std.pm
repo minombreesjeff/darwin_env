@@ -4,9 +4,7 @@ require Exporter;
 
 =head1 NAME
 
-getopt - Process single-character switches with switch clustering
-
-getopts - Process single-character switches with switch clustering
+getopt, getopts - Process single-character switches with switch clustering
 
 =head1 SYNOPSIS
 
@@ -55,6 +53,9 @@ the output file handle, the name of option-processing package, its version,
 and the switches string.  If the subroutines are not defined, an attempt is
 made to generate intelligent messages; for best results, define $main::VERSION.
 
+If embedded documentation (in pod format, see L<perlpod>) is detected
+in the script, C<--help> will also show how to access the documentation.
+
 Note that due to excessive paranoia, if $Getopt::Std::STANDARD_HELP_VERSION
 isn't true (the default is false), then the messages are printed on STDERR,
 and the processing continues after the messages are printed.  This being
@@ -70,7 +71,7 @@ and version_mess() with the switches string as an argument.
 
 @ISA = qw(Exporter);
 @EXPORT = qw(getopt getopts);
-$VERSION = '1.04';
+$VERSION = '1.05';
 # uncomment the next line to disable 1.03-backward compatibility paranoia
 # $STANDARD_HELP_VERSION = 1;
 
@@ -186,11 +187,26 @@ sub help_mess ($;$) {
 	}
 	my ($scr) = ($0 =~ m,([^/\\]+)$,);
 	print $h <<EOH if @_;			# Let the script override this
+
 Usage: $scr [-OPTIONS [-MORE_OPTIONS]] [--] [PROGRAM_ARG1 ...]
 EOH
 	print $h <<EOH;
+
 The following single-character options are accepted:$help
+
 Options may be merged together.  -- stops processing of options.$arg
+EOH
+	my $has_pod;
+	if ( defined $0 and $0 ne '-e' and -f $0 and -r $0
+	     and open my $script, '<', $0 ) {
+	    while (<$script>) {
+		$has_pod = 1, last if /^=(pod|head1)/;
+	    }
+	}
+	print $h <<EOH if $has_pod;
+
+For more details run
+	perldoc -F $0
 EOH
     }
 }

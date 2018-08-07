@@ -1,8 +1,42 @@
 # Revision history for Perl extension Encode.
 #
-# $Id: Changes,v 1.97 2003/07/08 21:52:14 dankogai Exp $
+# $Id: Changes,v 1.99 2003/12/29 02:47:16 dankogai Exp dankogai $
 #
-$Revision: 1.97 $ $Date: 2003/07/08 21:52:14 $
+
+$Revision: 1.99 $ $Date: 2003/12/29 02:47:16 $
+! Unicode/Unicode.xs
+  find_encoding("UTF-16BE")->encode("abc") now null terminates
+  http://www.mail-archive.com/perl5-porters@perl.org/msg69766.html
+! Encode.pm
+  prototype bug in decode_utf8() fixed
+  Message-Id: <600A4CDA-F004-11D7-B570-000393AE4244@dan.co.jp>
+! Encode.pm /MANIFEST encoding.pm lib/Encode/Supported.pod 
+  t/at-cn.t t/at-tw.t  t/gsm0338.t ucm/gsm0338.ucm
++ t/gsm0338.t
+  Merged from maintperl@21987
+
+1.98 2003/08/20 11:15:31
+! lib/Encode/MIME/Header.pm AUTHORS t/mime-header.t
+  Dave Evans has found and corrected a bug in Encode::MIME::Header.
+  Test suite added by Dan Kogai.
+  Message-Id: <3F43440B.7060606@rudolf.org.uk>
+! encoding.pm
+  Typo fixes rolled back in from bleedperl
+! t/at-cn.t t/at-tw.t
+  v-strings, now depreciated in perl 5.8.1, is replaced by sadahiro
+  Message-Id: <20030805002313.9880.BQW10602@nifty.com>
+! bin/enc2xs
+  argv case nit for VMS by Craig
+  Message-ID: <3F2B02DE.10207@mac.com>
+! t/enc_eucjp.t t/enc_utf8.t AUTHORS
+  Encode test fixes for VMS by Peter Prymmer
+  Message-ID: <OFBD4A7559.D7CF9517-ON85256D6B.00534853-85256D6B.00538131@factset.com>
+! lib/Encode/Alias.pm t/Aliases.t
+  koi-8 aliases bug detected and patched by sadahiro.
+  Further fix and test suite by dankogai
+  Message-Id: <20030713102228.C76A.BQW10602@nifty.com>
+
+1.97 2003/07/08 21:52:14
 ! encoding.pm lib/Encode/Guess.pm lib/Encode/Alias.pm 
   lib/Encode/JP/JIS7.pm lib/Encode/Encoder.pm Encode.pm
   $DEBUG replaced with DEBUG() so perl optimizes better,

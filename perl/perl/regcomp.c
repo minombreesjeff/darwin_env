@@ -96,12 +96,12 @@
 #endif /* op */
 
 #ifdef MSDOS
-# if defined(BUGGY_MSC6)
+#  if defined(BUGGY_MSC6)
  /* MSC 6.00A breaks on op/regexp.t test 85 unless we turn this off */
- # pragma optimize("a",off)
+#    pragma optimize("a",off)
  /* But MSC 6.00A is happy with 'w', for aliases only across function calls*/
- # pragma optimize("w",on )
-# endif /* BUGGY_MSC6 */
+#    pragma optimize("w",on )
+#  endif /* BUGGY_MSC6 */
 #endif /* MSDOS */
 
 #ifndef STATIC
@@ -472,7 +472,7 @@ S_scan_commit(pTHX_ RExC_state_t *pRExC_state, scan_data_t *data)
     STRLEN old_l = CHR_SVLEN(*data->longest);
 
     if ((l >= old_l) && ((l > old_l) || (data->flags & SF_BEFORE_EOL))) {
-	sv_setsv(*data->longest, data->last_found);
+	SvSetMagicSV(*data->longest, data->last_found);
 	if (*data->longest == data->longest_fixed) {
 	    data->offset_fixed = l ? data->last_start_min : data->pos_min;
 	    if (data->flags & SF_BEFORE_EOL)
@@ -2250,7 +2250,7 @@ S_reg(pTHX_ RExC_state_t *pRExC_state, I32 paren, I32 *flagp)
 		}
 		else {						/* First pass */
 		    if (PL_reginterp_cnt < ++RExC_seen_evals
-			&& PL_curcop != &PL_compiling)
+			&& IN_PERL_RUNTIME)
 			/* No compiled RE interpolated, has runtime
 			   components ===> unsafe.  */
 			FAIL("Eval-group not allowed at runtime, use re 'eval'");
@@ -2506,8 +2506,8 @@ S_reg(pTHX_ RExC_state_t *pRExC_state, I32 paren, I32 *flagp)
 	    if (paren == '>')
 		node = SUSPEND, flag = 0;
 	    reginsert(pRExC_state, node,ret);
-	    Set_Node_Offset(ret, oregcomp_parse);
-	    Set_Node_Length(ret,  RExC_parse - oregcomp_parse + 2);
+	    Set_Node_Cur_Length(ret);
+	    Set_Node_Offset(ret, parse_start + 1);
 	    ret->flags = flag;
 	    regtail(pRExC_state, ret, reg_node(pRExC_state, TAIL));
 	}
@@ -2788,7 +2788,7 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp)
 {
     register regnode *ret = 0;
     I32 flags;
-    char *parse_start = 0;
+    char *parse_start = RExC_parse;
 
     *flagp = WORST;		/* Tentatively. */
 
@@ -3051,6 +3051,7 @@ tryagain:
 	default:
 	    /* Do not generate `unrecognized' warnings here, we fall
 	       back into the quick-grab loop below */
+	    parse_start--;
 	    goto defchar;
 	}
 	break;
@@ -3157,11 +3158,6 @@ tryagain:
 				ender = grok_hex(p + 1, &numlen, &flags, NULL);
 				if (ender > 0xff)
 				    RExC_utf8 = 1;
-				/* numlen is generous */
-				if (numlen + len >= 127) {
-				    p--;
-				    goto loopdone;
-				}
 				p = e + 1;
 			    }
 			}
@@ -3305,7 +3301,7 @@ tryagain:
 	    }
 	    if (len > 0)
 		*flagp |= HASWIDTH;
-	    if (len == 1)
+	    if (len == 1 && UNI_IS_INVARIANT(ender))
 		*flagp |= SIMPLE;
 	    if (!SIZE_ONLY)
 		STR_LEN(ret) = len;
@@ -4267,8 +4263,11 @@ S_nextchar(pTHX_ RExC_state_t *pRExC_state)
     for (;;) {
 	if (*RExC_parse == '(' && RExC_parse[1] == '?' &&
 		RExC_parse[2] == '#') {
-	    while (*RExC_parse && *RExC_parse != ')')
+	    while (*RExC_parse != ')') {
+		if (RExC_parse == RExC_end)
+		    FAIL("Sequence (?#... not terminated");
 		RExC_parse++;
+	    }
 	    RExC_parse++;
 	    continue;
 	}
@@ -4278,9 +4277,8 @@ S_nextchar(pTHX_ RExC_state_t *pRExC_state)
 		continue;
 	    }
 	    else if (*RExC_parse == '#') {
-		while (*RExC_parse && *RExC_parse != '\n')
-		    RExC_parse++;
-		RExC_parse++;
+		while (RExC_parse < RExC_end)
+		    if (*RExC_parse++ == '\n') break;
 		continue;
 	    }
 	}
@@ -4423,6 +4421,7 @@ S_reginsert(pTHX_ RExC_state_t *pRExC_state, U8 op, regnode *opnd)
               RExC_parse - RExC_start,
               RExC_offsets[0])); 
 	Set_Node_Offset(place, RExC_parse);
+	Set_Node_Length(place, 1);
     }
     src = NEXTOPER(place);
     FILL_ADVANCE_NODE(place, op);
@@ -5038,7 +5037,7 @@ S_re_croak2(pTHX_ const char* pat1,const char* pat2,...)
     if (l1 > 512)
 	l1 = 512;
     Copy(message, buf, l1 , char);
-    buf[l1] = '\0';			/* Overwrite \n */
+    buf[l1-1] = '\0';			/* Overwrite \n */
     Perl_croak(aTHX_ "%s", buf);
 }
 

@@ -95,11 +95,20 @@ it doesn't kill itself):
     }
 
 Another interesting signal to send is signal number zero.  This doesn't
-actually affect another process, but instead checks whether it's alive
+actually affect a child process, but instead checks whether it's alive
 or has changed its UID.
 
     unless (kill 0 => $kid_pid) {
 	warn "something wicked happened to $kid_pid";
+    }
+
+When directed at a process whose UID is not identical to that
+of the sending process, signal number zero may fail because
+you lack permission to send the signal, even though the process is alive.
+You may be able to determine the cause of failure using C<%!>.
+
+    unless (kill 0 => $pid or $!{EPERM}) {
+	warn "$pid looks dead";
     }
 
 You might also want to employ anonymous functions for simple signal
@@ -279,7 +288,7 @@ to find out whether anyone (or anything) has accidentally removed our fifo.
 	sleep 2;    # to avoid dup signals
     }
 
-=head2 Deferred Signals (Safe signals)
+=head2 Deferred Signals (Safe Signals)
 
 In Perls before Perl 5.7.3 by installing Perl code to deal with
 signals, you were exposing yourself to danger from two things.  First,
@@ -1021,7 +1030,7 @@ Here's a sample Unix-domain client:
     use strict;
     my ($rendezvous, $line);
 
-    $rendezvous = shift || '/tmp/catsock';
+    $rendezvous = shift || 'catsock';
     socket(SOCK, PF_UNIX, SOCK_STREAM, 0)	|| die "socket: $!";
     connect(SOCK, sockaddr_un($rendezvous))	|| die "connect: $!";
     while (defined($line = <SOCK>)) {
@@ -1042,7 +1051,7 @@ to be on the localhost, and thus everything works right.
     sub spawn;  # forward declaration
     sub logmsg { print "$0 $$: @_ at ", scalar localtime, "\n" }
 
-    my $NAME = '/tmp/catsock';
+    my $NAME = 'catsock';
     my $uaddr = sockaddr_un($NAME);
     my $proto = getprotobyname('tcp');
 
@@ -1601,7 +1610,7 @@ A small example demonstrating SysV message queues:
     my $id = msgget(IPC_PRIVATE, IPC_CREAT | S_IRWXU);
 
     my $sent = "message";
-    my $type = 1234;
+    my $type_sent = 1234;
     my $rcvd;
     my $type_rcvd;
 

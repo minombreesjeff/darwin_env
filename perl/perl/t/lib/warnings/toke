@@ -801,10 +801,19 @@ EXPECT
 
 ########
 # toke.c
-use warnings 'deprecated';
-$v = v65.66;
-no warnings 'deprecated';
-$v = v65.66;
+# mandatory warning
+eval q/if ($a) { } elseif ($b) { }/;
+no warnings "syntax";
+eval q/if ($a) { } elseif ($b) { }/;
 EXPECT
-v-strings are deprecated at - line 3.
+elseif should be elsif at (eval 1) line 1.
+########
+# toke.c
+# mandatory warning
+eval q/5 6/;
+no warnings "syntax";
+eval q/5 6/;
+EXPECT
+Number found where operator expected at (eval 1) line 1, near "5 6"
+	(Missing operator before  6?)
 

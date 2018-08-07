@@ -36,16 +36,17 @@ sub skip {
     return 1;
 }
 
-print "1..53\n";
+print "1..54\n";
 
-$Is_MSWin32 = $^O eq 'MSWin32';
-$Is_NetWare = $^O eq 'NetWare';
-$Is_VMS     = $^O eq 'VMS';
-$Is_Dos     = $^O eq 'dos';
-$Is_os2     = $^O eq 'os2';
-$Is_Cygwin  = $^O eq 'cygwin';
-$Is_MacOS   = $^O eq 'MacOS';
-$Is_MPE     = $^O eq 'mpeix';		
+$Is_MSWin32  = $^O eq 'MSWin32';
+$Is_NetWare  = $^O eq 'NetWare';
+$Is_VMS      = $^O eq 'VMS';
+$Is_Dos      = $^O eq 'dos';
+$Is_os2      = $^O eq 'os2';
+$Is_Cygwin   = $^O eq 'cygwin';
+$Is_MacOS    = $^O eq 'MacOS';
+$Is_MPE      = $^O eq 'mpeix';		
+$Is_miniperl = $ENV{PERL_CORE_MINITEST};
 
 $PERL = ($Is_NetWare            ? 'perl'   :
 	 ($Is_MacOS || $Is_VMS) ? $^X      :
@@ -125,7 +126,8 @@ END
 END
     close CMDPIPE;
     $? >>= 8 if $^O eq 'VMS'; # POSIX status hiding in 2nd byte
-    print $? & 0xFF ? "ok 6\n" : "not ok 6\n";
+    my $todo = ($^O eq 'os2' ? ' # TODO: EMX v0.9d_fix4 bug: wrong nibble? ' : '');
+    print $? & 0xFF ? "ok 6$todo\n" : "not ok 6$todo\n";
 
     $test += 4;
 }
@@ -267,14 +269,18 @@ if ($Is_VMS || $Is_Dos || $Is_MacOS) {
     skip("%ENV manipulations fail or aren't safe on $^O") for 1..4;
 }
 else {
-	$PATH = $ENV{PATH};
-	$PDL = $ENV{PERL_DESTRUCT_LEVEL} || 0;
-	$ENV{foo} = "bar";
-	%ENV = ();
-	$ENV{PATH} = $PATH;
-	$ENV{PERL_DESTRUCT_LEVEL} = $PDL || 0;
-	ok ($Is_MSWin32 ? (`set foo 2>NUL` eq "")
-				: (`echo \$foo` eq "\n") );
+	if ($ENV{PERL_VALGRIND}) {
+	    skip("clearing \%ENV is not safe when running under valgrind");
+	} else {
+	    $PATH = $ENV{PATH};
+	    $PDL = $ENV{PERL_DESTRUCT_LEVEL} || 0;
+	    $ENV{foo} = "bar";
+	    %ENV = ();
+	    $ENV{PATH} = $PATH;
+	    $ENV{PERL_DESTRUCT_LEVEL} = $PDL || 0;
+	    ok ($Is_MSWin32 ? (`set foo 2>NUL` eq "")
+			    : (`echo \$foo` eq "\n") );
+	}
 
 	$ENV{__NoNeSuCh} = "foo";
 	$0 = "bar";
@@ -342,26 +348,35 @@ else {
     skip('no caseless %ENV support') for 1..4;
 }
 
+if ($Is_miniperl) {
+    skip ("miniperl can't rely on loading %Errno") for 1..2;
+} else {
+   no warnings 'void';
+
 # Make sure Errno hasn't been prematurely autoloaded
 
-ok !defined %Errno::;
+   ok !defined %Errno::;
 
 # Test auto-loading of Errno when %! is used
 
-ok scalar eval q{
-   my $errs = %!;
-   defined %Errno::;
-}, $@;
+   ok scalar eval q{
+      %!;
+      defined %Errno::;
+   }, $@;
+}
 
+if ($Is_miniperl) {
+    skip ("miniperl can't rely on loading %Errno");
+} else {
+    # Make sure that Errno loading doesn't clobber $!
 
-# Make sure that Errno loading doesn't clobber $!
+    undef %Errno::;
+    delete $INC{"Errno.pm"};
 
-undef %Errno::;
-delete $INC{"Errno.pm"};
-
-open(FOO, "nonesuch"); # Generate ENOENT
-my %errs = %{"!"}; # Cause Errno.pm to be loaded at run-time
-ok ${"!"}{ENOENT};
+    open(FOO, "nonesuch"); # Generate ENOENT
+    my %errs = %{"!"}; # Cause Errno.pm to be loaded at run-time
+    ok ${"!"}{ENOENT};
+}
 
 ok $^S == 0 && defined $^S;
 eval { ok $^S == 1 };
@@ -395,4 +410,16 @@ ok "@+" eq "10 1 6 10";
 	$ok = "a$\b" eq "aa\0bb";
     }
     ok $ok;
+}
+
+# Test for bug [perl #27839]
+{
+    my $x;
+    sub f {
+	"abc" =~ /(.)./;
+	$x = "@+";
+	return @+;
+    };
+    my @y = f();
+    ok( $x eq "@y", "return a magic array ($x) vs (@y)" );
 }

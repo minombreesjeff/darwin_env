@@ -7,7 +7,7 @@ use Carp;
 @ISA = qw(Exporter DynaLoader);
 @EXPORT = qw(openlog closelog setlogmask syslog);
 @EXPORT_OK = qw(setlogsock);
-$VERSION = '0.03';
+$VERSION = '0.05';
 
 # it would be nice to try stream/unix first, since that will be
 # most efficient. However streams are dodgy - see _syslog_send_stream
@@ -36,7 +36,7 @@ Sys::Syslog, openlog, closelog, setlogmask, syslog - Perl interface to the UNIX 
     use Sys::Syslog qw(:DEFAULT setlogsock);  # default set, plus setlogsock
 
     setlogsock $sock_type;
-    openlog $ident, $logopt, $facility;
+    openlog $ident, $logopt, $facility;       # don't forget this
     syslog $priority, $format, @args;
     $oldmask = setlogmask $mask_priority;
     closelog;
@@ -57,13 +57,21 @@ I<$ident> is prepended to every message.  I<$logopt> contains zero or
 more of the words I<pid>, I<ndelay>, I<nowait>.  The cons option is
 ignored, since the failover mechanism will drop down to the console
 automatically if all other media fail.  I<$facility> specifies the
-part of the system
+part of the system to report about, for example LOG_USER or LOG_LOCAL0:
+see your C<syslog(3)> documentation for the facilities available in
+your system.
+
+B<You should use openlog() before calling syslog().>
 
 =item syslog $priority, $format, @args
 
 If I<$priority> permits, logs I<($format, @args)>
 printed as by C<printf(3V)>, with the addition that I<%m>
 is replaced with C<"$!"> (the latest error message).
+
+If you didn't use openlog() before using syslog(), syslog will try to
+guess the I<$ident> by extracting the shortest prefix of I<$format>
+that ends in a ":".
 
 =item setlogmask $mask_priority
 
@@ -80,6 +88,7 @@ systems a character special device) returned by the C<_PATH_LOG> macro
 (if your system defines it), or F</dev/log> or F</dev/conslog>,
 whatever is writable.  A value of 'stream' will connect to the stream
 indicated by the pathname provided as the optional second parameter.
+(For example Solaris and IRIX require 'stream' instead of 'unix'.)
 A value of 'inet' will connect to an INET socket (either tcp or udp,
 tried in that order) returned by getservbyname(). 'tcp' and 'udp' can
 also be given as values. The value 'console' will send messages
@@ -251,7 +260,8 @@ sub syslog {
     local(@words, $num, $numpri, $numfac, $sum);
     local($facility) = $facility;	# may need to change temporarily.
 
-    croak "syslog: expected both priority and mask" unless $mask && $priority;
+    croak "syslog: expecting argument \$priority" unless $priority;
+    croak "syslog: expecting argument \$format"   unless $mask;
 
     @words = split(/\W+/, $priority, 2);# Allow "level" or "level|facility".
     undef $numpri;
@@ -384,6 +394,7 @@ sub _syslog_send_socket {
 
 sub xlate {
     local($name) = @_;
+    return $name+0 if $name =~ /^\s*\d+\s*$/;
     $name = uc $name;
     $name = "LOG_$name" unless $name =~ /^LOG_/;
     $name = "Sys::Syslog::$name";

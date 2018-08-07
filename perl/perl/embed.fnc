@@ -19,7 +19,7 @@
 :	x		not exported
 :	X		explicitly exported
 :	M		may change
-:	E		visible to Perl core extensions
+:	E		visible to extensions included in the Perl core
 :	b		binary backward compatibility; function is a macro
 :			but has also Perl_ implementation (which is exported)
 :
@@ -47,7 +47,7 @@ Anod	|int	|perl_parse	|PerlInterpreter* interp|XSINIT_t xsinit \
 				|int argc|char** argv|char** env
 Anp	|bool	|doing_taint	|int argc|char** argv|char** env
 #if defined(USE_ITHREADS)
-Anod	|PerlInterpreter*|perl_clone|PerlInterpreter* interp, UV flags
+Anod	|PerlInterpreter*|perl_clone|PerlInterpreter* interp|UV flags
 #  if defined(PERL_IMPLICIT_SYS)
 Ano	|PerlInterpreter*|perl_clone_using|PerlInterpreter *interp|UV flags \
 				|struct IPerlMem* m|struct IPerlMem* ms \
@@ -350,6 +350,7 @@ Ap	|bool	|is_uni_punct_lc|UV c
 Ap	|bool	|is_uni_xdigit_lc|UV c
 Apd	|STRLEN	|is_utf8_char	|U8 *p
 Apd	|bool	|is_utf8_string	|U8 *s|STRLEN len
+Apd	|bool	|is_utf8_string_loc|U8 *s|STRLEN len|U8 **p
 Ap	|bool	|is_utf8_alnum	|U8 *p
 Ap	|bool	|is_utf8_alnumc	|U8 *p
 Ap	|bool	|is_utf8_idfirst|U8 *p
@@ -1012,8 +1013,6 @@ s	|HEK*	|save_hek_flags	|const char *str|I32 len|U32 hash|int flags
 s	|void	|hv_magic_check	|HV *hv|bool *needs_copy|bool *needs_store
 s	|void	|unshare_hek_or_pvn|HEK* hek|const char* sv|I32 len|U32 hash
 s	|HEK*	|share_hek_flags|const char* sv|I32 len|U32 hash|int flags
-s	|SV**	|hv_fetch_flags	|HV* tb|const char* key|I32 klen|I32 lval \
-                                |int flags
 s	|void	|hv_notallowed	|int flags|const char *key|I32 klen|const char *msg
 #endif
 
@@ -1044,10 +1043,10 @@ s	|OP *	|my_kid		|OP *o|OP *attrs|OP **imopsp
 s	|OP *	|dup_attrlist	|OP *o
 s	|void	|apply_attrs	|HV *stash|SV *target|OP *attrs|bool for_my
 s	|void	|apply_attrs_my	|HV *stash|OP *target|OP *attrs|OP **imopsp
-#  if defined(PL_OP_SLAB_ALLOC)
-s	|void*	|Slab_Alloc	|int m|size_t sz
-s	|void	|Slab_Free	|void *op
-#  endif
+#endif
+#if defined(PL_OP_SLAB_ALLOC)
+Ap	|void*	|Slab_Alloc	|int m|size_t sz
+Ap	|void	|Slab_Free	|void *op
 #endif
 
 #if defined(PERL_IN_PERL_C) || defined(PERL_DECL_PROT)
@@ -1063,9 +1062,9 @@ s	|void	|init_postdump_symbols|int|char **|char **
 s	|void	|init_predump_symbols
 rs	|void	|my_exit_jump
 s	|void	|nuke_stacks
-s	|void	|open_script	|char *|bool|SV *|int *fd
+s	|void	|open_script	|char *|bool|SV *
 s	|void	|usage		|char *
-s	|void	|validate_suid	|char *|char*|int
+s	|void	|validate_suid	|char *|char*
 #  if defined(IAMSUID)
 s	|int	|fd_on_nosuid_fs|int fd
 #  endif
@@ -1108,7 +1107,8 @@ s	|void*	|docatch_body
 s	|void*	|vdocatch_body	|va_list args
 #endif
 s	|OP*	|dofindlabel	|OP *o|char *label|OP **opstack|OP **oplimit
-s	|void	|doparseform	|SV *sv
+s	|OP*	|doparseform	|SV *sv
+sn	|bool	|num_overflow	|NV value|I32 fldsize|I32 frcsize
 s	|I32	|dopoptoeval	|I32 startingblock
 s	|I32	|dopoptolabel	|char *label
 s	|I32	|dopoptoloop	|I32 startingblock
@@ -1410,5 +1410,14 @@ p	|int	|get_debug_opts	|char **s
 
 
 
-END_EXTERN_C
 
+Apd	|void	|hv_clear_placeholders|HV* hb
+
+#if defined(PERL_IN_HV_C) || defined(PERL_DECL_PROT)
+sM	|SV*	|hv_delete_common|HV* tb|SV* key_sv|const char* key|STRLEN klen|int k_flags|I32 d_flags|U32 hash
+sM	|HE*	|hv_fetch_common|HV* tb|SV* key_sv|const char* key|STRLEN klen|int flags|int action|SV* val|U32 hash
+#endif
+Apd	|SV*	|hv_scalar	|HV* hv|
+p	|SV*	|magic_scalarpack|HV* hv|MAGIC*	mg
+
+END_EXTERN_C

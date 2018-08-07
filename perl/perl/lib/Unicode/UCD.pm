@@ -3,7 +3,7 @@ package Unicode::UCD;
 use strict;
 use warnings;
 
-our $VERSION = '0.2';
+our $VERSION = '0.22';
 
 use Storable qw(dclone);
 
@@ -125,6 +125,7 @@ you will need also the compexcl(), casefold(), and casespec() functions.
 
 =cut
 
+# NB: This function is duplicated in charnames.pm
 sub _getcode {
     my $arg = shift;
 
@@ -211,6 +212,7 @@ sub charinfo {
 	use Search::Dict 1.02;
 	if (look($UNICODEFH, "$hexk;", { xfrm => sub { $_[0] =~ /^([^;]+);(.+)/; sprintf "%06X;$2", hex($1) } } ) >= 0) {
 	    my $line = <$UNICODEFH>;
+	    return unless defined $line;
 	    chomp $line;
 	    my %prop;
 	    @prop{qw(

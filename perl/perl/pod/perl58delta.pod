@@ -1,6 +1,6 @@
 =head1 NAME
 
-perldelta - what is new for perl v5.8.0
+perl58delta - what is new for perl v5.8.0
 
 =head1 DESCRIPTION
 
@@ -664,7 +664,7 @@ The template letters are C<j>, C<J>, C<F>, and C<D>.
 
 =item *
 
-C<pack('U0a*', ...)> can now be used to force a string to UTF8.
+C<pack('U0a*', ...)> can now be used to force a string to UTF-8.
 
 =item *
 
@@ -1905,17 +1905,17 @@ for site-wide changes).
 If your file system supports symbolic links, you can build Perl outside
 of the source directory by
 
-	mkdir /tmp/perl/build/directory
-	cd /tmp/perl/build/directory
+	mkdir perl/build/directory
+	cd perl/build/directory
 	sh /path/to/perl/source/Configure -Dmksymlinks ...
 
-This will create in /tmp/perl/build/directory a tree of symbolic links
+This will create in perl/build/directory a tree of symbolic links
 pointing to files in /path/to/perl/source.  The original files are left
 unaffected.  After Configure has finished, you can just say
 
 	make all test
 
-and Perl will be built and tested, all in /tmp/perl/build/directory.
+and Perl will be built and tested, all in perl/build/directory.
 [561]
 
 =item *
@@ -2475,7 +2475,7 @@ C<IsAlnum>, C<IsAlpha>, and C<IsWord> now match titlecase.
 
 Concatenation with the C<.> operator or via variable interpolation,
 C<eq>, C<substr>, C<reverse>, C<quotemeta>, the C<x> operator,
-substitution with C<s///>, single-quoted UTF8, should now work.
+substitution with C<s///>, single-quoted UTF-8, should now work.
 
 =item *
 

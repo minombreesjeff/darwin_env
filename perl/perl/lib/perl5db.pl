@@ -189,7 +189,7 @@ that will be executed (in the debugger's context) after the debugger has
 initialized itself.
 
 Next, it checks the C<PERLDB_OPTS> environment variable and treats its 
-contents as the argument of a debugger <C<O> command.
+contents as the argument of a debugger <C<o> command.
 
 =head2 STARTUP-ONLY OPTIONS
 
@@ -492,7 +492,8 @@ package DB;
 use IO::Handle;
 
 # Debugger for Perl 5.00x; perl5db.pl patch level:
-$VERSION = 1.22;
+$VERSION = 1.25;
+
 $header  = "perl5db.pl version $VERSION";
 
 =head1 DEBUGGER ROUTINES
@@ -670,7 +671,7 @@ sub eval {
 # wise to read the perldebguts man page or risk the ire of dragons.
 #
 # (It should be noted that perldebguts will tell you a lot about
-# the uderlying mechanics of how the debugger interfaces into the
+# the underlying mechanics of how the debugger interfaces into the
 # Perl interpreter, but not a lot about the debugger itself. The new
 # comments in this code try to address this problem.)
 
@@ -899,7 +900,14 @@ sub eval {
 #   + Includes cleanup by Robin Barker and Jarkko Hietaniemi.
 # Changes: 1.22  Jun 09, 2003 Alex Vandiver <alexmv@MIT.EDU>
 #   + Flush stdout/stderr before the debugger prompt is printed.
-
+# Changes: 1.23: Dec 21, 2003 Dominique Quatravaux
+#   + Fix a side-effect of bug #24674 in the perl debugger ("odd taint bug")
+# Changes: 1.24: Mar 03, 2004 Richard Foley <richard.foley@rfi.net>
+#   + Added command to save all debugger commands for sourcing later.
+#   + Added command to display parent inheritence tree of given class.
+#   + Fixed minor newline in history bug.
+# Changes: 1.25: Apr 17, 2004 Richard Foley <richard.foley@rfi.net>
+#   + Fixed option bug (setting invalid options + not recognising valid short forms)
 ####################################################################
 
 =head1 DEBUGGER INITIALIZATION
@@ -1344,6 +1352,9 @@ if (not defined &get_fork_TTY                        # no routine exists,
 elsif ($^O eq 'os2') {                               # If this is OS/2,
     *get_fork_TTY = \&os2_get_fork_TTY;              # use the OS/2 version
 }
+# untaint $^O, which may have been tainted by the last statement.
+# see bug [perl #24674]
+$^O =~ m/^(.*)\z/; $^O = $1;
 
 # "Here begin the unreadable code.  It needs fixing." 
 
@@ -2073,8 +2084,9 @@ it up.
 
             # Empty input means repeat the last command.
             $cmd =~ /^$/ && ($cmd = $laststep);
+			chomp($cmd); # get rid of the annoying extra newline
             push (@hist, $cmd) if length($cmd) > 1;
-
+            push (@truehist, $cmd);
 
           # This is a restart point for commands that didn't arrive
           # via direct user input. It allows us to 'redo PIPE' to
@@ -2379,7 +2391,7 @@ deal with them instead of processing them in-line.
 
                 # All of these commands were remapped in perl 5.8.0;
                 # we send them off to the secondary dispatcher (see below). 
-                $cmd =~ /^([aAbBhlLMoOvwW]\b|[<>\{]{1,2})\s*(.*)/so && do {
+                $cmd =~ /^([aAbBhilLMoOvwW]\b|[<>\{]{1,2})\s*(.*)/so && do {
                     &cmd_wrapper($1, $2, $line);
                     next CMD;
                 };
@@ -3214,6 +3226,29 @@ pick it up.
                     else {
                         # Couldn't open it. 
                         &warn("Can't execute `$1': $!\n");
+                    }
+                    next CMD;
+                };
+
+=head4 C<save> - send current history to a file
+
+Takes the complete history, (not the shrunken version you see with C<H>),
+and saves it to the given filename, so it can be replayed using C<source>.
+
+Note that all C<^(save|source)>'s are commented out with a view to minimise recursion.
+
+=cut
+
+				# save source - write commands to a file for later use
+                $cmd =~ /^save\s*(.*)$/ && do {
+					my $file = $1 || '.perl5dbrc'; # default?
+                    if (open my $fh, "> $file") {
+						# chomp to remove extraneous newlines from source'd files 
+						chomp(my @truelist = map { m/^\s*(save|source)/ ? "#$_": $_ } @truehist);
+						print $fh join("\n", @truelist); 
+						print "commands saved in $file\n";
+                    } else {
+                        &warn("Can't save debugger commands in '$1': $!\n");
                     }
                     next CMD;
                 };
@@ -4528,6 +4563,30 @@ sub cmd_h {
         print_help($summary);
     }
 } ## end sub cmd_h
+
+=head3 C<cmd_i> - inheritance display
+
+Display the (nested) parentage of the module or object given.
+
+=cut
+
+sub cmd_i {
+    my $cmd  = shift;
+    my $line = shift;
+	eval { require Class::ISA };
+	if ($@) { 
+		&warn($@ =~ /locate/ ? "Class::ISA module not found - please install\n" : $@);
+	} else {
+		ISA:
+		foreach my $isa (split(/\s+/, $line)) {
+		  no strict 'refs'; 
+		  print join(', ', map { # snaffled unceremoniously from Class::ISA
+				"$_".(defined(${"$_\::VERSION"}) ? ' '.${"$_\::VERSION"} : undef)
+			  } Class::ISA::self_and_super_path($isa));
+		  print "\n";
+		}
+	}
+} ## end sub cmd_i
 
 =head3 C<cmd_l> - list lines (command)
 
@@ -6205,9 +6264,6 @@ sub parse_options {
             ($val = $1) =~ s/\\([\\$end])/$1/g;
         } ## end else [ if ("?" eq $sep)
 
-        # Impedance-match the code above to the code below.
-        my $option = $opt;
-
         # Exclude non-booleans from getting set to 1 by default.
         if ($opt_needs_val{$option} && $val_defaulted) {
             my $cmd = ($CommandSet eq '580') ? 'o' : 'O';
@@ -6763,6 +6819,7 @@ B<m> I<expr>		Evals expression in list context, prints methods callable
 		on the first element of the result.
 B<m> I<class>		Prints methods callable via the given class.
 B<M>		Show versions of loaded modules.
+B<i> I<class>       Prints nested parents of given class.
 B<y> [I<n> [I<Vars>]]   List lexicals in higher scope <n>.  Vars same as B<V>.
 
 B<<> ?			List Perl commands to run before each prompt.
@@ -6791,6 +6848,7 @@ B<$psh> [I<cmd>] 	Run I<cmd> in subshell (forces \"\$SHELL -c 'cmd'\")."
       . "
 		See 'B<O> I<shellBang>' too.
 B<source> I<file>		Execute I<file> containing debugger commands (may nest).
+B<save> I<file>       Save current debugger session (actual history) to I<file>.
 B<H> I<-number>	Display last number commands (default all).
 B<p> I<expr>		Same as \"I<print {DB::OUT} expr>\" in current package.
 B<|>I<dbcmd>		Run debugger command, piping DB::OUT to current pager.
@@ -6873,7 +6931,7 @@ I<Data Examination:>     B<expr>     Execute perl code, also see: B<s>,B<n>,B<t>
   B<p> I<expr>         Print expression (uses script's current package).
   B<S> [[B<!>]I<pat>]     List subroutine names [not] matching pattern
   B<V> [I<Pk> [I<Vars>]]  List Variables in Package.  Vars can be ~pattern or !pattern.
-  B<X> [I<Vars>]       Same as \"B<V> I<current_package> [I<Vars>]\".
+  B<X> [I<Vars>]       Same as \"B<V> I<current_package> [I<Vars>]\".  B<i> I<class> inheritance tree.
   B<y> [I<n> [I<Vars>]]   List lexicals in higher scope <n>.  Vars same as B<V>.
 For more help, type B<h> I<cmd_letter>, or run B<$doccmd perldebug> for all docs.
 END_SUM
@@ -7674,6 +7732,7 @@ BEGIN {    # This does not compile, alas. (XXX eh?)
     $sh      = '!';         # Shell escape (does not work)
     $rc      = ',';         # Recall command (does not work)
     @hist    = ('?');       # Show history (does not work)
+	@truehist=();           # Can be saved for replay (per session)
 
     # This defines the point at which you get the 'deep recursion' 
     # warning. It MUST be defined or the debugger will not load.

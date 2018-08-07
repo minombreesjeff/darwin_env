@@ -2,8 +2,8 @@ package ExtUtils::MakeMaker;
 
 BEGIN {require 5.005_03;}
 
-$VERSION = '6.12';
-($Revision) = q$Revision: 1.124 $ =~ /Revision:\s+(\S+)/;
+$VERSION = '6.17';
+($Revision) = q$Revision: 1.133 $ =~ /Revision:\s+(\S+)/;
 
 require Exporter;
 use Config;
@@ -354,11 +354,13 @@ sub new {
     if ("@ARGV" =~ /\bPREREQ_PRINT\b/) {
         require Data::Dumper;
         print Data::Dumper->Dump([$self->{PREREQ_PM}], [qw(PREREQ_PM)]);
+        exit 0;
     }
 
     # PRINT_PREREQ is RedHatism.
     if ("@ARGV" =~ /\bPRINT_PREREQ\b/) {
-        print join(" ", map { "perl($_)>=$self->{PREREQ_PM}->{$_} " } sort keys %{$self->{PREREQ_PM}}), "\n";
+        print join(" ", map { "perl($_)>=$self->{PREREQ_PM}->{$_} " } 
+                        sort keys %{$self->{PREREQ_PM}}), "\n";
         exit 0;
    }
 
@@ -439,9 +441,10 @@ sub new {
             next unless defined $self->{PARENT}{$key};
 
             # Don't stomp on WriteMakefile() args.
-            $self->{$key} = $self->{PARENT}{$key}
-                unless defined $self->{ARGS}{$key} and
-                       $self->{ARGS}{$key} eq $self->{$key};
+            next if defined $self->{ARGS}{$key} and
+                    $self->{ARGS}{$key} eq $self->{$key};
+
+            $self->{$key} = $self->{PARENT}{$key};
 
             unless ($Is_VMS && $key =~ /PERL$/) {
                 $self->{$key} = $self->catdir("..",$self->{$key})
@@ -658,7 +661,6 @@ sub parse_args{
     my($self, @args) = @_;
     foreach (@args) {
         unless (m/(.*?)=(.*)/) {
-            help(),exit 1 if m/^help$/;
             ++$Verbose if m/^verb/;
             next;
         }
@@ -1964,7 +1966,8 @@ only check if any version is installed already.
 =item PREREQ_PRINT
 
 Bool.  If this parameter is true, the prerequisites will be printed to
-stdout and MakeMaker will exit.  The output format is
+stdout and MakeMaker will exit.  The output format is an evalable hash
+ref.
 
 $PREREQ_PM = {
                'A::B' => Vers1,
@@ -2037,7 +2040,7 @@ MakeMaker object. The following lines will be parsed o.k.:
 
     $VERSION = '1.00';
     *VERSION = \'1.01';
-    $VERSION = sprintf "%d.%03d", q$Revision: 1.124 $ =~ /(\d+)/g;
+    $VERSION = sprintf "%d.%03d", q$Revision: 1.133 $ =~ /(\d+)/g;
     $FOO::VERSION = '1.10';
     *FOO::VERSION = \'1.11';
     our $VERSION = 1.2.3;       # new for perl5.6.0 
@@ -2362,7 +2365,8 @@ meta-data file has been introduced, F<META.yml>.
 F<META.yml> is a YAML document (see http://www.yaml.org) containing
 basic information about the module (name, version, prerequisites...)
 in an easy to read format.  The format is developed and defined by the
-Module::Build developers.
+Module::Build developers (see 
+http://module-build.sourceforge.net/META-spec.html)
 
 MakeMaker will automatically generate a F<META.yml> file for you and
 add it to your F<MANIFEST> as part of the 'distdir' target (and thus

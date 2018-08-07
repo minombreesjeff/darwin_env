@@ -3,7 +3,7 @@ package Digest::MD5;
 use strict;
 use vars qw($VERSION @ISA @EXPORT_OK);
 
-$VERSION = '2.26';  # $Date: 2003/07/22 06:09:50 $
+$VERSION = '2.33';  # $Date: 2003/12/07 08:40:18 $
 
 require Exporter;
 *import = \&Exporter::import;
@@ -11,6 +11,16 @@ require Exporter;
 
 require DynaLoader;
 @ISA=qw(DynaLoader);
+
+eval {
+    require Digest::base;
+    push(@ISA, 'Digest::base');
+};
+if ($@) {
+    my $err = $@;
+    *add_bits = sub { die $err };
+}
+
 
 eval {
     Digest::MD5->bootstrap($VERSION);
@@ -104,7 +114,7 @@ characters from this set: 'A'..'Z', 'a'..'z', '0'..'9', '+' and
 Note that the base64 encoded string returned is not padded to be a
 multiple of 4 bytes long.  If you want interoperability with other
 base64 encoded md5 digests you might want to append the redundant
-string redundant "==" to the result.
+string "==" to the result.
 
 =back
 
@@ -172,6 +182,16 @@ or reset the $md5 object if this occurs.
 
 In most cases you want to make sure that the $io_handle is in
 C<binmode> before you pass it as argument to the addfile() method.
+
+=item $md5->add_bits($data, $nbits)
+
+=item $md5->add_bits($bitstring)
+
+Since the MD5 algorithm is byte oriented you might only add bits as
+multiples of 8, so you probably want to just use add() instead.  The
+add_bits() method is provided for compatibility with other digest
+implementations.  See L<Digest> for description of the arguments
+that add_bits() take.
 
 =item $md5->digest
 
@@ -247,7 +267,7 @@ This is useful when calculating checksum for files:
     close(FILE);
     print $md5->b64digest, " $file\n";
 
-Or we can use the builtin addfile method for more efficient reading of
+Or we can use the addfile method for more efficient reading of
 the file:
 
     use Digest::MD5;

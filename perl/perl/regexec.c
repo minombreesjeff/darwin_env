@@ -68,7 +68,7 @@
  ****    Alterations to Henry's code are...
  ****
  ****    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- ****    2000, 2001, 2002, 2003, by Larry Wall and others
+ ****    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  ****
  ****    You may distribute under the terms of either the GNU General Public
  ****    License or the Artistic License, as specified in the README file.
@@ -87,6 +87,7 @@
 #define RF_warned	2		/* warned about big count? */
 #define RF_evaled	4		/* Did an EVAL with setting? */
 #define RF_utf8		8		/* String contains multibyte chars? */
+#define RF_false	16		/* odd number of nested negatives */
 
 #define UTF ((PL_reg_flags & RF_utf8) != 0)
 
@@ -952,6 +953,7 @@ S_find_byclass(pTHX_ regexp * prog, regnode *c, char *s, char *strend, char *sta
 	I32 doevery = (prog->reganch & ROPT_SKIP) == 0;
 	char *m;
 	STRLEN ln;
+	STRLEN lnc;
 	unsigned int c1;
 	unsigned int c2;
 	char *e;
@@ -1007,10 +1009,12 @@ S_find_byclass(pTHX_ regexp * prog, regnode *c, char *s, char *strend, char *sta
 	    }
 	    break;
 	case EXACTF:
-	    m = STRING(c);
-	    ln = STR_LEN(c);
+	    m   = STRING(c);
+	    ln  = STR_LEN(c);	/* length to match in octets/bytes */
+	    lnc = (I32) ln;	/* length to match in characters */
 	    if (UTF) {
 	        STRLEN ulen1, ulen2;
+		U8 *sm = (U8 *) m;
 		U8 tmpbuf1[UTF8_MAXLEN_UCLC+1];
 		U8 tmpbuf2[UTF8_MAXLEN_UCLC+1];
 
@@ -1021,6 +1025,11 @@ S_find_byclass(pTHX_ regexp * prog, regnode *c, char *s, char *strend, char *sta
 				    0, ckWARN(WARN_UTF8) ? 0 : UTF8_ALLOW_ANY);
 		c2 = utf8n_to_uvchr(tmpbuf2, UTF8_MAXLEN_UCLC,
 				    0, ckWARN(WARN_UTF8) ? 0 : UTF8_ALLOW_ANY);
+		lnc = 0;
+		while (sm < ((U8 *) m + ln)) {
+		    lnc++;
+		    sm += UTF8SKIP(sm);
+		}
 	    }
 	    else {
 		c1 = *(U8*)m;
@@ -1028,12 +1037,13 @@ S_find_byclass(pTHX_ regexp * prog, regnode *c, char *s, char *strend, char *sta
 	    }
 	    goto do_exactf;
 	case EXACTFL:
-	    m = STRING(c);
-	    ln = STR_LEN(c);
+	    m   = STRING(c);
+	    ln  = STR_LEN(c);
+	    lnc = (I32) ln;
 	    c1 = *(U8*)m;
 	    c2 = PL_fold_locale[c1];
 	  do_exactf:
-	    e = HOP3c(strend, -(I32)ln, s);
+	    e = HOP3c(strend, -((I32)lnc), s);
 
 	    if (norun && e < s)
 		e = s;			/* Due to minlen logic of intuit() */
@@ -1056,6 +1066,8 @@ S_find_byclass(pTHX_ regexp * prog, regnode *c, char *s, char *strend, char *sta
 		STRLEN len, foldlen;
 		
 		if (c1 == c2) {
+		    /* Upper and lower of 1st char are equal -
+		     * probably not a "letter". */
 		    while (s <= e) {
 		        c = utf8n_to_uvchr((U8*)s, UTF8_MAXLEN, &len,
 					   ckWARN(WARN_UTF8) ?
@@ -3190,7 +3202,10 @@ S_regmatch(pTHX_ regnode *prog)
 				      "%*s  already tried at this position...\n",
 				      REPORT_CODE_OFF+PL_regindent*2, "")
 			);
-			sayNO_SILENT;
+			if (PL_reg_flags & RF_false)
+			    sayYES;
+			else
+			    sayNO_SILENT;
 		    }
 		    PL_reg_poscache[o] |= (1<<b);
 		}
@@ -3376,19 +3391,8 @@ S_regmatch(pTHX_ regnode *prog)
 		    if (! HAS_TEXT(text_node)) c1 = c2 = -1000;
 		    else {
 			if (PL_regkind[(U8)OP(text_node)] == REF) {
-			    I32 n, ln;
-			    n = ARG(text_node);  /* which paren pair */
-			    ln = PL_regstartp[n];
-			    /* assume yes if we haven't seen CLOSEn */
-			    if (
-				(I32)*PL_reglastparen < n ||
-				ln == -1 ||
-				ln == PL_regendp[n]
-			    ) {
-				c1 = c2 = -1000;
-				goto assume_ok_MM;
-			    }
-			    c1 = *(PL_bostr + ln);
+			    c1 = c2 = -1000;
+			    goto assume_ok_MM;
 			}
 			else { c1 = (U8)*STRING(text_node); }
 			if (OP(text_node) == EXACTF || OP(text_node) == REFF)
@@ -3458,19 +3462,8 @@ S_regmatch(pTHX_ regnode *prog)
 			if (! HAS_TEXT(text_node)) c1 = c2 = -1000;
 			else {
 			    if (PL_regkind[(U8)OP(text_node)] == REF) {
-				I32 n, ln;
-				n = ARG(text_node);  /* which paren pair */
-				ln = PL_regstartp[n];
-				/* assume yes if we haven't seen CLOSEn */
-				if (
-				    (I32)*PL_reglastparen < n ||
-				    ln == -1 ||
-				    ln == PL_regendp[n]
-				) {
-				    c1 = c2 = -1000;
-				    goto assume_ok_REG;
-				}
-				c1 = *(PL_bostr + ln);
+				c1 = c2 = -1000;
+				goto assume_ok_REG;
 			    }
 			    else { c1 = (U8)*STRING(text_node); }
 
@@ -3567,19 +3560,8 @@ S_regmatch(pTHX_ regnode *prog)
 		if (! HAS_TEXT(text_node)) c1 = c2 = -1000;
 		else {
 		    if (PL_regkind[(U8)OP(text_node)] == REF) {
-			I32 n, ln;
-			n = ARG(text_node);  /* which paren pair */
-			ln = PL_regstartp[n];
-			/* assume yes if we haven't seen CLOSEn */
-			if (
-			    (I32)*PL_reglastparen < n ||
-			    ln == -1 ||
-			    ln == PL_regendp[n]
-			) {
-			    c1 = c2 = -1000;
-			    goto assume_ok_easy;
-			}
-			s = (U8*)PL_bostr + ln;
+			c1 = c2 = -1000;
+			goto assume_ok_easy;
 		    }
 		    else { s = (U8*)STRING(text_node); }
 
@@ -3873,6 +3855,7 @@ S_regmatch(pTHX_ regnode *prog)
 	    }
 	    else
 		PL_reginput = locinput;
+	    PL_reg_flags ^= RF_false;
 	    goto do_ifmatch;
 	case IFMATCH:
 	    n = 1;
@@ -3888,6 +3871,8 @@ S_regmatch(pTHX_ regnode *prog)
 	  do_ifmatch:
 	    inner = NEXTOPER(NEXTOPER(scan));
 	    if (regmatch(inner) != n) {
+		if (n == 0)
+		    PL_reg_flags ^= RF_false;
 	      say_no:
 		if (logical) {
 		    logical = 0;
@@ -3897,6 +3882,8 @@ S_regmatch(pTHX_ regnode *prog)
 		else
 		    sayNO;
 	    }
+	    if (n == 0)
+		PL_reg_flags ^= RF_false;
 	  say_yes:
 	    if (logical) {
 		logical = 0;

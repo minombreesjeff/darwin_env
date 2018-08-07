@@ -1,3 +1,46 @@
+6.17 Sun Sep 14 20:52:45 PDT 2003
+    - Fixing LD so it can be set properly on Win32. (Orton Yves)
+    * Fixing the init_PERL() "tack $Config{exe_ext} onto $^X" logic so 
+      it works on VMS allowing $^X to be found.
+    * Fixing make install UNINST=1 on Windows so it can search PERL5LIB
+      (Orton Yves)
+    - Fixing "could not open MANIFEST" test for OS/2 (and probably others) 
+      where a read-only file cannot be deleted.
+    - Hacking around the fact that when built for debugging, VMS creates
+      ndbgperl.exe.
+    - Eliminating the never implemented "help" argument.
+
+6.16 Mon Aug 18 01:39:51 PDT 2003
+    * Fixing the max exec length for Windows to account for old
+      versions of nmake (the one you can download for free from MS).
+    - Hack to normalize //foo//bar paths in ExtUtils::Installed.
+      [Sreeji K Das]
+    * Adding Module::Build utility files to MANIFEST.SKIP
+    - PREREQ_PRINT is supposed to exit after dumping. (Wolfgang Friebel
+      bleadperl@20530)
+    - maniadd() was trying to open the MANIFEST even if it didn't need to
+      causing unnecessary errors for read-only MANIFESTs (rt.cpan.org 3180)
+
+6.15 Sun Aug  3 16:41:05 PDT 2003
+    - Make FIXIN on Win32 use the new pl2bat rather than an already
+      installed one when building the core (Mattia Barbon)
+
+6.14 Sun Aug  3 16:23:27 PDT 2003
+    - Adding a reference to the Module::Build META.yml spec in the META.yml
+      itself and the metafile documentation.
+    - Removed Begin/End comments from manifypods that were getting in the
+      way of users adding code to the manifypods target.
+    - Putting a POD2MAN macro back as an alias to POD2MAN_EXE and using
+      it instead of POD2MAN.  This allows people to generate their own man 
+      installation targets in a backwards compatible way.
+    * Adding reference to the Module::Build META file spec in the docs.
+
+6.13 Thu Jul 31 16:48:01 PDT 2003
+    - Generated META.yml now has the prereqs in sorted order (Andy Lester)
+    - Arguments to child Makefile.PLs were still having .. prepended.  This
+      was exposed by the earlier fix of rt.perl.org 4345.
+    - extralibs.ld (for static builds) wasn't being cleaned up.
+
 6.12 Tue Jul 29 22:19:38 PDT 2003
     - Should any of your prefixes be /, MakeMaker might lose this and
       prepend your prefix as "prefixyour/directory" rather than
@@ -18,7 +61,6 @@
     * Noting where to find make in the README
     * Noting that MakeMaker does not produce a GNU make compatible Makefile
       on Windows.
-    * 6.10_08 with a new version #.
 
 6.10_08 Mon Jul 21 18:17:06 PDT 2003
     * $Config{installvendorman*dir} was being ignored and our default

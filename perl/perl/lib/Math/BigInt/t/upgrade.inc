@@ -1,12 +1,12 @@
-#include this file into another for subclass testing
+# include this file into another for subclass testing
 
 # This file is nearly identical to bigintpm.t, except that certain results
 # are _requird_ to be different due to "upgrading" or "promoting" to BigFloat.
 # The reverse is not true, any unmarked results can be either BigInt or
 # BigFloat, depending on how good the internal optimization is (e.g. it
-# is usually desirable to have 2 ** 2 return an BigInt, not an BigFloat).
+# is usually desirable to have 2 ** 2 return a BigInt, not a BigFloat).
 
-# Results that are required to be BigFloat are marked with an "^" at the end.
+# Results that are required to be BigFloat are marked with C<^> at the end.
 
 # Please note that the testcount goes up by two for each extra result marked
 # with ^, since then we test whether it has the proper class and that it left
@@ -117,6 +117,8 @@ while (<DATA>)
       $try .= '$x <=> $y;';
       } elsif ($f eq "bround") {
       $try .= "$round_mode; \$x->bround(\$y);";
+      } elsif ($f eq "broot") {
+      $try .= "\$x->broot(\$y);";
       } elsif ($f eq "bacmp"){
       $try .= '$x->bacmp($y);';
       } elsif ($f eq "badd"){
@@ -1243,7 +1245,7 @@ abc:NaN,NaN
 &bfac
 -1:NaN
 NaNfac:NaN
-+inf:NaN
++inf:inf
 -inf:NaN
 0:1
 1:1
@@ -1261,8 +1263,8 @@ abc:12:NaN
 0:0:1
 0:1:0
 0:2:0
-0:-1:NaN
-0:-2:NaN
+0:-1:inf
+0:-2:inf
 1:0:1
 1:1:1
 1:2:1
@@ -1295,6 +1297,14 @@ abc:12:NaN
 -1:-2:1
 -1:-3:-1
 -1:-4:1
+-2:2:4
+-2:3:-8
+-2:4:16
+-2:5:-32
+-3:2:9
+-3:3:-27
+-3:4:81
+-3:5:-243
 10:2:100
 10:3:1000
 10:4:10000
@@ -1315,6 +1325,11 @@ abc:12:NaN
 10000000000000000:17
 -123:3
 215960156869840440586892398248:30
+# broot always upgrades
+&broot
+144:2:12^
+123:2:11.09053650640941716205160010260993291846^
+# bsqrt always upgrades
 &bsqrt
 145:12.04159457879229548012824103037860805243^
 144:12^

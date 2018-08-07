@@ -6,10 +6,11 @@
 # This file supports:
 # 	\p{Mongolian} (and fuzzy permutations)
 # 
-# Meaning: Script 'MONGOLIAN'
+# Meaning: Script 'Mongolian'
 #
 return <<'END';
-1810	1819	MONGOLIAN
-1820	1877	MONGOLIAN
-1880	18A9	MONGOLIAN
+1800	180E	Mongolian
+1810	1819	Mongolian
+1820	1877	Mongolian
+1880	18A9	Mongolian
 END

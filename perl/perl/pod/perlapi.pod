@@ -725,7 +725,9 @@ Found in file pp_pack.c
 
 =item unpackstring
 
-The engine implementing unpack() Perl function.
+The engine implementing unpack() Perl function. C<unpackstring> puts the
+extracted list items on the stack and returns the number of elements.
+Issue C<PUTBACK> before and C<SPAGAIN> after the call to this function.
 
 	I32	unpackstring(char *pat, char *patend, char *s, char *strend, U32 flags)
 
@@ -1074,6 +1076,21 @@ Clears a hash, making it empty.
 =for hackers
 Found in file hv.c
 
+=item hv_clear_placeholders
+
+Clears any placeholders from a hash.  If a restricted hash has any of its keys
+marked as readonly and the key is subsequently deleted, the key is not actually
+deleted but is marked by assigning it a value of &PL_sv_placeholder.  This tags
+it so it will be ignored by future operations such as iterating over the hash,
+but will still allow the hash to have a value reaasigned to the key at some
+future point.  This function clears any such placeholder keys from the hash.
+See Hash::Util::lock_keys() for an example of its use.
+
+	void	hv_clear_placeholders(HV* hb)
+
+=for hackers
+Found in file hv.c
+
 =item hv_delete
 
 Deletes a key/value pair in the hash.  The value SV is removed from the
@@ -1222,9 +1239,8 @@ Returns entries from a hash iterator.  See C<hv_iterinit> and C<hv_iternext>.
 The C<flags> value will normally be zero; if HV_ITERNEXT_WANTPLACEHOLDERS is
 set the placeholders keys (for restricted hashes) will be returned in addition
 to normal keys. By default placeholders are automatically skipped over.
-Currently a placeholder is implemented with a value that is literally
-<&Perl_sv_undef> (a regular C<undef> value is a normal read-write SV for which
-C<!SvOK> is false). Note that the implementation of placeholders and
+Currently a placeholder is implemented with a value that is
+C<&Perl_sv_placeholder>. Note that the implementation of placeholders and
 restricted hashes may change, and the implementation currently is
 insufficiently abstracted for any change to be tidy.
 
@@ -1251,6 +1267,15 @@ Found in file hv.c
 Adds magic to a hash.  See C<sv_magic>.
 
 	void	hv_magic(HV* hv, GV* gv, int how)
+
+=for hackers
+Found in file hv.c
+
+=item hv_scalar
+
+Evaluates the hash in scalar context and returns the result. Handles magic when the hash is tied.
+
+	SV*	hv_scalar(HV* hv)
 
 =for hackers
 Found in file hv.c
@@ -2333,6 +2358,15 @@ Return C<&PL_sv_undef> from an XSUB immediately.  Uses C<XST_mUNDEF>.
 =for hackers
 Found in file XSUB.h
 
+=item XSRETURN_UV
+
+Return an integer from an XSUB immediately.  Uses C<XST_mUV>.
+
+	void	XSRETURN_UV(IV uv)
+
+=for hackers
+Found in file XSUB.h
+
 =item XSRETURN_YES
 
 Return C<&PL_sv_yes> from an XSUB immediately.  Uses C<XST_mYES>.
@@ -2691,7 +2725,7 @@ Found in file sv.h
 
 Returns a boolean indicating whether the SV contains a signed integer.
 
-	void	SvIOK_notUV(SV* sv)
+	bool	SvIOK_notUV(SV* sv)
 
 =for hackers
 Found in file sv.h
@@ -2736,7 +2770,7 @@ Found in file sv.h
 
 Returns a boolean indicating whether the SV contains an unsigned integer.
 
-	void	SvIOK_UV(SV* sv)
+	bool	SvIOK_UV(SV* sv)
 
 =for hackers
 Found in file sv.h
@@ -2887,22 +2921,22 @@ which guarantees to evaluate sv only once.
 =for hackers
 Found in file sv.h
 
-=item SvNVX
-
-Returns the raw value in the SV's NV slot, without checks or conversions.
-Only use when you are sure SvNOK is true. See also C<SvNV()>.
-
-	NV	SvNVX(SV* sv)
-
-=for hackers
-Found in file sv.h
-
 =item SvNVx
 
 Coerces the given SV to a double and returns it. Guarantees to evaluate
 sv only once. Use the more efficient C<SvNV> otherwise.
 
 	NV	SvNVx(SV* sv)
+
+=for hackers
+Found in file sv.h
+
+=item SvNVX
+
+Returns the raw value in the SV's NV slot, without checks or conversions.
+Only use when you are sure SvNOK is true. See also C<SvNV()>.
+
+	NV	SvNVX(SV* sv)
 
 =for hackers
 Found in file sv.h
@@ -2969,7 +3003,7 @@ Found in file sv.h
 =item SvPOK_only
 
 Tells an SV that it is a string and disables all other OK bits.
-Will also turn off the UTF8 status.
+Will also turn off the UTF-8 status.
 
 	void	SvPOK_only(SV* sv)
 
@@ -2979,7 +3013,7 @@ Found in file sv.h
 =item SvPOK_only_UTF8
 
 Tells an SV that it is a string and disables all other OK bits,
-and leaves the UTF8 status as it was.
+and leaves the UTF-8 status as it was.
 
 	void	SvPOK_only_UTF8(SV* sv)
 
@@ -3096,21 +3130,21 @@ Like C<SvPV_nolen>, but converts sv to utf8 first if necessary.
 =for hackers
 Found in file sv.h
 
-=item SvPVx
-
-A version of C<SvPV> which guarantees to evaluate sv only once.
-
-	char*	SvPVx(SV* sv, STRLEN len)
-
-=for hackers
-Found in file sv.h
-
 =item SvPVX
 
 Returns a pointer to the physical string in the SV.  The SV must contain a
 string.
 
 	char*	SvPVX(SV* sv)
+
+=for hackers
+Found in file sv.h
+
+=item SvPVx
+
+A version of C<SvPV> which guarantees to evaluate sv only once.
+
+	char*	SvPVx(SV* sv, STRLEN len)
 
 =for hackers
 Found in file sv.h
@@ -3222,7 +3256,7 @@ Found in file sv.h
 
 =item SvTAINT
 
-Taints an SV if tainting is enabled
+Taints an SV if tainting is enabled.
 
 	void	SvTAINT(SV* sv)
 
@@ -3255,7 +3289,7 @@ Found in file sv.h
 
 =item SvTAINTED_on
 
-Marks an SV as tainted.
+Marks an SV as tainted if tainting is enabled.
 
 	void	SvTAINTED_on(SV* sv)
 
@@ -3315,14 +3349,14 @@ Found in file sv.h
 
 Returns a boolean indicating whether the SV contains UTF-8 encoded data.
 
-	void	SvUTF8(SV* sv)
+	bool	SvUTF8(SV* sv)
 
 =for hackers
 Found in file sv.h
 
 =item SvUTF8_off
 
-Unsets the UTF8 status of an SV.
+Unsets the UTF-8 status of an SV.
 
 	void	SvUTF8_off(SV *sv)
 
@@ -3331,7 +3365,7 @@ Found in file sv.h
 
 =item SvUTF8_on
 
-Turn on the UTF8 status of an SV (the data is not changed, just the flag).
+Turn on the UTF-8 status of an SV (the data is not changed, just the flag).
 Do not use frivolously.
 
 	void	SvUTF8_on(SV *sv)
@@ -3349,22 +3383,22 @@ for a version which guarantees to evaluate sv only once.
 =for hackers
 Found in file sv.h
 
-=item SvUVX
-
-Returns the raw value in the SV's UV slot, without checks or conversions.
-Only use when you are sure SvIOK is true. See also C<SvUV()>.
-
-	UV	SvUVX(SV* sv)
-
-=for hackers
-Found in file sv.h
-
 =item SvUVx
 
 Coerces the given SV to an unsigned integer and returns it. Guarantees to
 evaluate sv only once. Use the more efficient C<SvUV> otherwise.
 
 	UV	SvUVx(SV* sv)
+
+=for hackers
+Found in file sv.h
+
+=item SvUVX
+
+Returns the raw value in the SV's UV slot, without checks or conversions.
+Only use when you are sure SvIOK is true. See also C<SvUV()>.
+
+	UV	SvUVX(SV* sv)
 
 =for hackers
 Found in file sv.h
@@ -3435,7 +3469,7 @@ Found in file sv.c
 =item sv_2pvbyte
 
 Return a pointer to the byte-encoded representation of the SV, and set *lp
-to its length.  May cause the SV to be downgraded from UTF8 as a
+to its length.  May cause the SV to be downgraded from UTF-8 as a
 side-effect.
 
 Usually accessed via the C<SvPVbyte> macro.
@@ -3448,7 +3482,7 @@ Found in file sv.c
 =item sv_2pvbyte_nolen
 
 Return a pointer to the byte-encoded representation of the SV.
-May cause the SV to be downgraded from UTF8 as a side-effect.
+May cause the SV to be downgraded from UTF-8 as a side-effect.
 
 Usually accessed via the C<SvPVbyte_nolen> macro.
 
@@ -3459,8 +3493,8 @@ Found in file sv.c
 
 =item sv_2pvutf8
 
-Return a pointer to the UTF8-encoded representation of the SV, and set *lp
-to its length.  May cause the SV to be upgraded to UTF8 as a side-effect.
+Return a pointer to the UTF-8-encoded representation of the SV, and set *lp
+to its length.  May cause the SV to be upgraded to UTF-8 as a side-effect.
 
 Usually accessed via the C<SvPVutf8> macro.
 
@@ -3471,8 +3505,8 @@ Found in file sv.c
 
 =item sv_2pvutf8_nolen
 
-Return a pointer to the UTF8-encoded representation of the SV.
-May cause the SV to be upgraded to UTF8 as a side-effect.
+Return a pointer to the UTF-8-encoded representation of the SV.
+May cause the SV to be upgraded to UTF-8 as a side-effect.
 
 Usually accessed via the C<SvPVutf8_nolen> macro.
 
@@ -3538,8 +3572,8 @@ Found in file sv.c
 =item sv_catpv
 
 Concatenates the string onto the end of the string which is in the SV.
-If the SV has the UTF8 status set, then the bytes appended should be
-valid UTF8.  Handles 'get' magic, but not 'set' magic.  See C<sv_catpv_mg>.
+If the SV has the UTF-8 status set, then the bytes appended should be
+valid UTF-8.  Handles 'get' magic, but not 'set' magic.  See C<sv_catpv_mg>.
 
 	void	sv_catpv(SV* sv, const char* ptr)
 
@@ -3573,8 +3607,8 @@ Found in file sv.c
 =item sv_catpvn
 
 Concatenates the string onto the end of the string which is in the SV.  The
-C<len> indicates number of bytes to copy.  If the SV has the UTF8
-status set, then the bytes appended should be valid UTF8.
+C<len> indicates number of bytes to copy.  If the SV has the UTF-8
+status set, then the bytes appended should be valid UTF-8.
 Handles 'get' magic, but not 'set' magic.  See C<sv_catpvn_mg>.
 
 	void	sv_catpvn(SV* sv, const char* ptr, STRLEN len)
@@ -3585,8 +3619,8 @@ Found in file sv.c
 =item sv_catpvn_flags
 
 Concatenates the string onto the end of the string which is in the SV.  The
-C<len> indicates number of bytes to copy.  If the SV has the UTF8
-status set, then the bytes appended should be valid UTF8.
+C<len> indicates number of bytes to copy.  If the SV has the UTF-8
+status set, then the bytes appended should be valid UTF-8.
 If C<flags> has C<SV_GMAGIC> bit set, will C<mg_get> on C<dsv> if
 appropriate, else not. C<sv_catpvn> and C<sv_catpvn_nomg> are implemented
 in terms of this function.
@@ -3880,7 +3914,7 @@ Found in file sv.c
 =item sv_len_utf8
 
 Returns the number of characters in the string in an SV, counting wide
-UTF8 bytes as a single character. Handles magic and type coercion.
+UTF-8 bytes as a single character. Handles magic and type coercion.
 
 	STRLEN	sv_len_utf8(SV* sv)
 
@@ -3965,7 +3999,7 @@ Found in file sv.c
 =item sv_pos_b2u
 
 Converts the value pointed to by offsetp from a count of bytes from the
-start of the string, to a count of the equivalent number of UTF8 chars.
+start of the string, to a count of the equivalent number of UTF-8 chars.
 Handles magic and type coercion.
 
 	void	sv_pos_b2u(SV* sv, I32* offsetp)
@@ -3975,7 +4009,7 @@ Found in file sv.c
 
 =item sv_pos_u2b
 
-Converts the value pointed to by offsetp from a count of UTF8 chars from
+Converts the value pointed to by offsetp from a count of UTF-8 chars from
 the start of the string, to a count of the equivalent number of bytes; if
 lenp is non-zero, it does the same to lenp, but this time starting from
 the offset, rather than from the start of the string. Handles magic and
@@ -4266,7 +4300,7 @@ Copies an integer into a new SV, optionally blessing the SV.  The C<rv>
 argument will be upgraded to an RV.  That RV will be modified to point to
 the new SV.  The C<classname> argument indicates the package for the
 blessing.  Set C<classname> to C<Nullch> to avoid the blessing.  The new SV
-will be returned and will have a reference count of 1.
+will have a reference count of 1, and the RV will be returned.
 
 	SV*	sv_setref_iv(SV* rv, const char* classname, IV iv)
 
@@ -4279,7 +4313,7 @@ Copies a double into a new SV, optionally blessing the SV.  The C<rv>
 argument will be upgraded to an RV.  That RV will be modified to point to
 the new SV.  The C<classname> argument indicates the package for the
 blessing.  Set C<classname> to C<Nullch> to avoid the blessing.  The new SV
-will be returned and will have a reference count of 1.
+will have a reference count of 1, and the RV will be returned.
 
 	SV*	sv_setref_nv(SV* rv, const char* classname, NV nv)
 
@@ -4293,7 +4327,7 @@ argument will be upgraded to an RV.  That RV will be modified to point to
 the new SV.  If the C<pv> argument is NULL then C<PL_sv_undef> will be placed
 into the SV.  The C<classname> argument indicates the package for the
 blessing.  Set C<classname> to C<Nullch> to avoid the blessing.  The new SV
-will be returned and will have a reference count of 1.
+will have a reference count of 1, and the RV will be returned.
 
 Do not use with other Perl types such as HV, AV, SV, CV, because those
 objects will become corrupted by the pointer copy process.
@@ -4311,8 +4345,8 @@ Copies a string into a new SV, optionally blessing the SV.  The length of the
 string must be specified with C<n>.  The C<rv> argument will be upgraded to
 an RV.  That RV will be modified to point to the new SV.  The C<classname>
 argument indicates the package for the blessing.  Set C<classname> to
-C<Nullch> to avoid the blessing.  The new SV will be returned and will have
-a reference count of 1.
+C<Nullch> to avoid the blessing.  The new SV will have a reference count 
+of 1, and the RV will be returned.
 
 Note that C<sv_setref_pv> copies the pointer while this copies the string.
 
@@ -4327,7 +4361,7 @@ Copies an unsigned integer into a new SV, optionally blessing the SV.  The C<rv>
 argument will be upgraded to an RV.  That RV will be modified to point to
 the new SV.  The C<classname> argument indicates the package for the
 blessing.  Set C<classname> to C<Nullch> to avoid the blessing.  The new SV
-will be returned and will have a reference count of 1.
+will have a reference count of 1, and the RV will be returned.
 
 	SV*	sv_setref_uv(SV* rv, const char* classname, UV uv)
 
@@ -4524,7 +4558,7 @@ Found in file sv.c
 
 =item sv_utf8_downgrade
 
-Attempt to convert the PV of an SV from UTF8-encoded to byte encoding.
+Attempt to convert the PV of an SV from UTF-8-encoded to byte encoding.
 This may not be possible if the PV contains non-byte encoding characters;
 if this is the case, either returns false or, if C<fail_ok> is not
 true, croaks.
@@ -4542,7 +4576,7 @@ Found in file sv.c
 
 =item sv_utf8_encode
 
-Convert the PV of an SV to UTF8-encoded, but then turn off the C<SvUTF8>
+Convert the PV of an SV to UTF-8-encoded, but then turn off the C<SvUTF8>
 flag so that it looks like octets again. Used as a building block
 for encode_utf8 in Encode.xs
 
@@ -4553,7 +4587,7 @@ Found in file sv.c
 
 =item sv_utf8_upgrade
 
-Convert the PV of an SV to its UTF8-encoded form.
+Convert the PV of an SV to its UTF-8-encoded form.
 Forces the SV to string form if it is not already.
 Always sets the SvUTF8 flag to avoid future validity checks even
 if all the bytes have hibit clear.
@@ -4568,7 +4602,7 @@ Found in file sv.c
 
 =item sv_utf8_upgrade_flags
 
-Convert the PV of an SV to its UTF8-encoded form.
+Convert the PV of an SV to its UTF-8-encoded form.
 Forces the SV to string form if it is not already.
 Always sets the SvUTF8 flag to avoid future validity checks even
 if all the bytes have hibit clear. If C<flags> has C<SV_GMAGIC> bit set,
@@ -4629,7 +4663,7 @@ Found in file sv.c
 
 =item bytes_from_utf8
 
-Converts a string C<s> of length C<len> from UTF8 into byte encoding.
+Converts a string C<s> of length C<len> from UTF-8 into byte encoding.
 Unlike <utf8_to_bytes> but like C<bytes_to_utf8>, returns a pointer to
 the newly-created string, and updates C<len> to contain the new
 length.  Returns the original string if no conversion occurs, C<len>
@@ -4646,11 +4680,11 @@ Found in file utf8.c
 
 =item bytes_to_utf8
 
-Converts a string C<s> of length C<len> from ASCII into UTF8 encoding.
+Converts a string C<s> of length C<len> from ASCII into UTF-8 encoding.
 Returns a pointer to the newly-created string, and sets C<len> to
 reflect the new length.
 
-If you want to convert to UTF8 from other encodings than ASCII,
+If you want to convert to UTF-8 from other encodings than ASCII,
 see sv_recode_to_utf8().
 
 NOTE: this function is experimental and may change or be
@@ -4704,11 +4738,21 @@ Found in file utf8.c
 =item is_utf8_string
 
 Returns true if first C<len> bytes of the given string form a valid
-UTF8 string, false otherwise.  Note that 'a valid UTF8 string' does
-not mean 'a string that contains code points above 0x7F encoded in
-UTF8' because a valid ASCII string is a valid UTF8 string.
+UTF-8 string, false otherwise.  Note that 'a valid UTF-8 string' does
+not mean 'a string that contains code points above 0x7F encoded in UTF-8'
+because a valid ASCII string is a valid UTF-8 string.
 
 	bool	is_utf8_string(U8 *s, STRLEN len)
+
+=for hackers
+Found in file utf8.c
+
+=item is_utf8_string_loc
+
+Like is_ut8_string but store the location of the failure in
+the last argument.
+
+	bool	is_utf8_string_loc(U8 *s, STRLEN len, U8 **p)
 
 =for hackers
 Found in file utf8.c
@@ -4877,7 +4921,7 @@ Found in file utf8.c
 =item utf8n_to_uvchr
 
 Returns the native character value of the first character in the string C<s>
-which is assumed to be in UTF8 encoding; C<retlen> will be set to the
+which is assumed to be in UTF-8 encoding; C<retlen> will be set to the
 length, in bytes, of that character.
 
 Allows length and flags to be passed to low level routine.
@@ -4891,10 +4935,10 @@ Found in file utf8.c
 
 Bottom level UTF-8 decode routine.
 Returns the unicode code point value of the first character in the string C<s>
-which is assumed to be in UTF8 encoding and no longer than C<curlen>;
+which is assumed to be in UTF-8 encoding and no longer than C<curlen>;
 C<retlen> will be set to the length, in bytes, of that character.
 
-If C<s> does not point to a well-formed UTF8 character, the behaviour
+If C<s> does not point to a well-formed UTF-8 character, the behaviour
 is dependent on the value of C<flags>: if it contains UTF8_CHECK_ONLY,
 it is assumed that the caller will raise a warning, and this function
 will silently just set C<retlen> to C<-1> and return zero.  If the
@@ -4914,7 +4958,7 @@ Found in file utf8.c
 
 =item utf8_distance
 
-Returns the number of UTF8 characters between the UTF-8 pointers C<a>
+Returns the number of UTF-8 characters between the UTF-8 pointers C<a>
 and C<b>.
 
 WARNING: use only if you *know* that the pointers point inside the
@@ -4952,7 +4996,7 @@ Found in file utf8.c
 
 =item utf8_to_bytes
 
-Converts a string C<s> of length C<len> from UTF8 into byte encoding.
+Converts a string C<s> of length C<len> from UTF-8 into byte encoding.
 Unlike C<bytes_to_utf8>, this over-writes the original string, and
 updates len to contain the new length.
 Returns zero on failure, setting C<len> to -1.
@@ -4968,10 +5012,10 @@ Found in file utf8.c
 =item utf8_to_uvchr
 
 Returns the native character value of the first character in the string C<s>
-which is assumed to be in UTF8 encoding; C<retlen> will be set to the
+which is assumed to be in UTF-8 encoding; C<retlen> will be set to the
 length, in bytes, of that character.
 
-If C<s> does not point to a well-formed UTF8 character, zero is
+If C<s> does not point to a well-formed UTF-8 character, zero is
 returned and retlen is set, if possible, to -1.
 
 	UV	utf8_to_uvchr(U8 *s, STRLEN* retlen)
@@ -4982,13 +5026,13 @@ Found in file utf8.c
 =item utf8_to_uvuni
 
 Returns the Unicode code point of the first character in the string C<s>
-which is assumed to be in UTF8 encoding; C<retlen> will be set to the
+which is assumed to be in UTF-8 encoding; C<retlen> will be set to the
 length, in bytes, of that character.
 
 This function should only be used when returned UV is considered
 an index into the Unicode semantic tables (e.g. swashes).
 
-If C<s> does not point to a well-formed UTF8 character, zero is
+If C<s> does not point to a well-formed UTF-8 character, zero is
 returned and retlen is set, if possible, to -1.
 
 	UV	utf8_to_uvuni(U8 *s, STRLEN* retlen)
@@ -4998,7 +5042,7 @@ Found in file utf8.c
 
 =item uvchr_to_utf8
 
-Adds the UTF8 representation of the Native codepoint C<uv> to the end
+Adds the UTF-8 representation of the Native codepoint C<uv> to the end
 of the string C<d>; C<d> should be have at least C<UTF8_MAXLEN+1> free
 bytes available. The return value is the pointer to the byte after the
 end of the new character. In other words,
@@ -5016,7 +5060,7 @@ Found in file utf8.c
 
 =item uvuni_to_utf8_flags
 
-Adds the UTF8 representation of the Unicode codepoint C<uv> to the end
+Adds the UTF-8 representation of the Unicode codepoint C<uv> to the end
 of the string C<d>; C<d> should be have at least C<UTF8_MAXLEN+1> free
 bytes available. The return value is the pointer to the byte after the
 end of the new character. In other words,
@@ -5215,8 +5259,9 @@ Found in file XSUB.h
 =item croak
 
 This is the XSUB-writer's interface to Perl's C<die> function.
-Normally use this function the same way you use the C C<printf>
-function.  See C<warn>.
+Normally call this function the same way you call the C C<printf>
+function.  Calling C<croak> returns control directly to Perl,
+sidestepping the normal C order of execution. See C<warn>.
 
 If you want to throw an exception object, assign the object to
 C<$@> and then pass C<Nullch> to croak():
@@ -5232,9 +5277,8 @@ Found in file util.c
 
 =item warn
 
-This is the XSUB-writer's interface to Perl's C<warn> function.  Use this
-function the same way you use the C C<printf> function.  See
-C<croak>.
+This is the XSUB-writer's interface to Perl's C<warn> function.  Call this
+function the same way you call the C C<printf> function.  See C<croak>.
 
 	void	warn(const char* pat, ...)
 

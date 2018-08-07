@@ -7,7 +7,7 @@
 #
 package B::C::Section;
 
-our $VERSION = '1.01';
+our $VERSION = '1.02';
 
 use B ();
 use base B::Section;
@@ -1863,10 +1863,10 @@ sub walkpackages
  my $sym;
  my $ref;
  no strict 'vars';
- local(*glob);
  $prefix = '' unless defined $prefix;
  while (($sym, $ref) = each %$symref) 
   {             
+   local(*glob);
    *glob = $ref;
    if ($sym =~ /::$/) 
     {

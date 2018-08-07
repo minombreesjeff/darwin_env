@@ -47,8 +47,10 @@ print "1..6\n";
 
 if (Sys::Syslog::_PATH_LOG()) {
     if (-e Sys::Syslog::_PATH_LOG()) {
-        if ($^O =~ /^solaris$/) {
-            # we should check for stream support here, not for solaris
+	# The only known $^O eq 'svr4' that needs this is NCR MP-RAS,
+	# but assuming 'stream' in SVR4 is probably not that bad.
+        if ($^O =~ /^(solaris|irix|svr4|powerux)$/) {
+            # we should check for stream support here, not for solaris/irix
             print defined(eval { setlogsock('stream') }) ? "ok 1\n" : "not ok 1 # $!\n";
         } else { 
             print defined(eval { setlogsock('unix') }) ? "ok 1\n" : "not ok 1 # $!\n";

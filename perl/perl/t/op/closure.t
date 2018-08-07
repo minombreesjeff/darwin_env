@@ -13,7 +13,7 @@ BEGIN {
 
 use Config;
 
-print "1..181\n";
+print "1..187\n";
 
 my $test = 1;
 sub test (&) {
@@ -603,4 +603,65 @@ sub linger {
     my $watch = '1';
     linger(\$watch);
     test { $watch eq '12' }
+}
+
+require "./test.pl";
+
+curr_test(182);
+
+# Because change #19637 was not applied to 5.8.1.
+SKIP: { skip("tests not in 5.8.", 3) }
+
+$test= 185;
+
+require './test.pl'; # for runperl()
+
+{
+   # bugid #23265 - this used to coredump during destruction of PL_maincv
+   # and its children
+
+    my $progfile = "b23265.pl";
+    open(T, ">$progfile") or die "$0: $!\n";
+    print T << '__EOF__';
+        print
+            sub {$_[0]->(@_)} -> (
+                sub {
+                    $_[1]
+                        ?  $_[0]->($_[0], $_[1] - 1) .  sub {"x"}->()
+                        : "y"
+                },   
+                2
+            )
+            , "\n"
+        ;
+__EOF__
+    close T;
+    my $got = runperl(progfile => $progfile);
+    test { chomp $got; $got eq "yxx" };
+    END { 1 while unlink $progfile }
+}
+
+{
+    # bugid #24914 = used to coredump restoring PL_comppad in the
+    # savestack, due to the early freeing of the anon closure
+
+    my $got = runperl(stderr => 1, prog => 
+'sub d {die} my $f; $f = sub {my $x=1; $f = 0; d}; eval{$f->()}; print qq(ok\n)'
+    );
+    test { $got eq "ok\n" };
+}
+
+# After newsub is redefined outside the BEGIN, it's CvOUTSIDE should point
+# to main rather than BEGIN, and BEGIN should be freed.
+
+{
+    my $flag = 0;
+    sub  X::DESTROY { $flag = 1 }
+    {
+	my $x;
+	BEGIN {$x = \&newsub }
+	sub newsub {};
+	$x = bless {}, 'X';
+    }
+    test { $flag == 1 };
 }

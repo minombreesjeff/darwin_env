@@ -361,7 +361,7 @@
  *	available to read directory entries. You may have to include
  *	<dirent.h>. See I_DIRENT.
  */
-/*#define HAS_READDIR		/ **/
+#define HAS_READDIR		/**/
 
 /* HAS_SEEKDIR:
  *	This symbol, if defined, indicates that the seekdir routine is
@@ -392,7 +392,7 @@
  *	to rename files.  Otherwise you should do the unlink(), link(), unlink()
  *	trick.
  */
-/*#define HAS_RENAME	/ **/
+#define HAS_RENAME	/**/
 
 /* HAS_RMDIR:
  *	This symbol, if defined, indicates that the rmdir routine is
@@ -663,7 +663,7 @@
  *	whether dirent is available or not. You should use this pseudo type to
  *	portably declare your directory entries.
  */
-/*#define I_DIRENT		/ **/
+#define I_DIRENT		/**/
 /*#define DIRNAMLEN	/ **/
 #define Direntry_t struct dirent
 
@@ -738,7 +738,7 @@
  *	This symbol, if defined, indicates that <stdlib.h> exists and should
  *	be included.
  */
-/*#define I_STDLIB		/ **/
+#define I_STDLIB		/**/
 
 /* I_STRING:
  *	This symbol, if defined, indicates to the C program that it should
@@ -1999,7 +1999,7 @@
  *	This symbol, if defined, indicates that the strtoul routine is
  *	available to provide conversion of strings to unsigned long.
  */
-/*#define HAS_STRTOUL	/ **/
+#define HAS_STRTOUL	/**/
 
 /* HAS_UNION_SEMUN:
  *	This symbol, if defined, indicates that the union semun is
@@ -3356,41 +3356,6 @@
 #ifndef USE_SOCKS
 /*#define	USE_SOCKS		/ **/
 #endif
-
-/* PERL_XS_APIVERSION:
- *	This variable contains the version of the oldest perl binary
- *	compatible with the present perl.  perl.c:incpush() and
- *	lib/lib.pm will automatically search in  for older
- *	directories across major versions back to xs_apiversion.
- *	This is only useful if you have a perl library directory tree
- *	structured like the default one.
- *	See INSTALL for how this works.
- *	The versioned site_perl directory was introduced in 5.005,
- *	so that is the lowest possible value.
- *	Since this can depend on compile time options
- *	it is set by Configure.  Other non-default sources
- *	of potential incompatibility, such as multiplicity, threads,
- *	debugging, 64bits, sfio, etc., are not checked for currently,
- *	though in principle we could go snooping around in old
- *	Config.pm files.
- */
-/* PERL_PM_APIVERSION:
- *	This variable contains the version of the oldest perl
- *	compatible with the present perl.  (That is, pure perl modules
- *	written for pm_apiversion will still work for the current
- *	version).  perl.c:incpush() and lib/lib.pm will automatically
- *	search in  for older directories across major versions
- *	back to pm_apiversion.  This is only useful if you have a perl
- *	library directory tree structured like the default one.  The
- *	versioned site_perl library was introduced in 5.005, so that's
- *	the default setting for this variable.  It's hard to imagine
- *	it changing before Perl6.  It is included here for symmetry
- *	with xs_apiveprsion -- the searching algorithms will
- *	(presumably) be similar.
- *	See the INSTALL file for how this works.
- */
-#define PERL_XS_APIVERSION "5.008"
-#define PERL_PM_APIVERSION "5.005"
 
 /* HAS_DRAND48_PROTO:
  *	This symbol, if defined, indicates that the system provides

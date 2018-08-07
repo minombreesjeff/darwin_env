@@ -37,7 +37,7 @@ For displaying PVs with control characters, embedded nulls, and Unicode.
 This would be useful for printing warnings, or data and regex dumping,
 not_a_number(), and so on.
 
-Requirements: should handle both byte and UTF8 strings.  isPRINT()
+Requirements: should handle both byte and UTF-8 strings.  isPRINT()
 characters printed as-is, character less than 256 as \xHH, Unicode
 characters as \x{HHH}.  Don't assume ASCII-like, either, get somebody
 on EBCDIC to test the output.
@@ -204,7 +204,7 @@ Floating point formatting is still causing some weird test failures.
 Locales and Unicode interact with each other in unpleasant ways.
 One possible solution would be to adopt/support ICU:
 
-	http://oss.software.ibm.com/developerworks/opensource/icu/project/
+	http://oss.software.ibm.com/icu/index.html
 
 =head2 Arithmetic on non-Arabic numerals
 
@@ -687,7 +687,7 @@ This emulation should also go near pp_sys.pp_truncate().
 
 chdir, chmod, chown, chroot, exec, glob, link, lstat, mkdir, open,
 opendir, qx, readdir, readlink, rename, rmdir, stat, symlink, sysopen,
-system, truncate, unlink, utime.  All these could potentially accept
+system, truncate, unlink, utime, -X.  All these could potentially accept
 Unicode filenames either as input or output (and in the case of system
 and qx Unicode in general, as input or output to/from the shell).
 Whether a filesystem - an operating system pair understands Unicode in
@@ -806,7 +806,7 @@ Benjamin Sugars has done this.
 
 Nick Ing-Simmons' C<perlio> supports an C<mmap> IO method.
 
-=head2 Byte to/from UTF8 and UTF8 to/from local conversion
+=head2 Byte to/from UTF-8 and UTF-8 to/from local conversion
 
 C<Encode> provides this.
 

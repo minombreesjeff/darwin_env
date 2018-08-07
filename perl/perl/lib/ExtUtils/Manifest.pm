@@ -12,7 +12,7 @@ use vars qw($VERSION @ISA @EXPORT_OK
           $Is_MacOS $Is_VMS 
           $Debug $Verbose $Quiet $MANIFEST $DEFAULT_MSKIP);
 
-$VERSION = 1.39;
+$VERSION = 1.42;
 @ISA=('Exporter');
 @EXPORT_OK = qw(mkmanifest
                 manicheck  filecheck  fullcheck  skipcheck
@@ -175,7 +175,7 @@ sub manifind {
 
 checks if all the files within a C<MANIFEST> in the current directory
 really do exist. If C<MANIFEST> and the tree below the current
-directory are in sync it exits silently, returning an empty list.
+directory are in sync it silently returns an empty list.
 Otherwise it returns a list of files which are listed in the
 C<MANIFEST> but missing from the directory, and by default also
 outputs these names to STDERR.
@@ -539,14 +539,19 @@ sub maniadd {
     _fix_manifest($MANIFEST);
 
     my $manifest = maniread();
-    open(MANIFEST, ">>$MANIFEST") or die "Could not open $MANIFEST: $!";
-    foreach my $file (_sort keys %$additions) {
-        next if exists $manifest->{$file};
+    my @needed = grep { !exists $manifest->{$_} } keys %$additions;
+    return 1 unless @needed;
 
+    open(MANIFEST, ">>$MANIFEST") or 
+      die "maniadd() could not open $MANIFEST: $!";
+
+    foreach my $file (_sort @needed) {
         my $comment = $additions->{$file} || '';
-        printf MANIFEST "%-40s%s\n", $file, $comment;
+        printf MANIFEST "%-40s %s\n", $file, $comment;
     }
-    close MANIFEST;
+    close MANIFEST or die "Error closing $MANIFEST: $!";
+
+    return 1;
 }
 
 

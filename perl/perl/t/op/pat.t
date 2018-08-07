@@ -6,7 +6,7 @@
 
 $| = 1;
 
-print "1..1007\n";
+print "1..1056\n";
 
 BEGIN {
     chdir 't' if -d 't';
@@ -1367,10 +1367,10 @@ print "ok 247\n";
     print "ok 263\n";
 }
 
-{
+SKIP: {
     my $test = 264; # till 575
 
-    use charnames ':full';
+    use charnames ":full";
 
     # This is far from complete testing, there are dozens of character
     # classes in Unicode.  The mixing of literals and \N{...} is
@@ -1691,10 +1691,11 @@ EOT
     print "not " if     $x =~ /[\x{100}]/;
     print "ok 604\n";
 
-    print "not " unless $x =~ /\p{InLatin1Supplement}/;
+    # the next two tests must be ignored on EBCDIC
+    print "not " unless $x =~ /\p{InLatin1Supplement}/ or ord("A") == 193;
     print "ok 605\n";
 
-    print "not " if     $x =~ /\P{InLatin1Supplement}/;
+    print "not " if     $x =~ /\P{InLatin1Supplement}/ and ord("A") != 193;
     print "ok 606\n";
 
     print "not " if     $x =~ /\p{InLatinExtendedA}/;
@@ -1909,8 +1910,10 @@ print "ok 663\n";
 print "not " unless chr(0xfb4f) =~ /\p{IsHebrew}/; # outside InHebrew
 print "ok 664\n";
 
-print "not " unless chr(0xb5) =~ /\p{IsGreek}/; # singleton (not in a range)
-print "ok 665\n";
+# # singleton (not in a range, this test must be ignored on EBCDIC)
+# print "not " unless chr(0xb5) =~ /\p{IsGreek}/ or ord("A") == 193;
+# print "ok 665\n";
+print "ok 665 # 0xb5 moved from Greek to Common with Unicode 4.0.1\n";
 
 print "not " unless chr(0x37a) =~ /\p{IsGreek}/; # singleton
 print "ok 666\n";
@@ -3187,5 +3190,77 @@ $_="abcdef\n";
 @x = m/./g;
 ok("abcde" eq "$`", '# TODO #19049 - global match not setting $`');
 
-# last test 1007
+ok("123\x{100}" =~ /^.*1.*23\x{100}$/, 'uft8 + multiple floating substr');
+
+# LATIN SMALL/CAPITAL LETTER A WITH MACRON
+ok("  \x{101}" =~ qr/\x{100}/i,
+   "<20030808193656.5109.1@llama.ni-s.u-net.com>");
+
+# LATIN SMALL/CAPITAL LETTER A WITH RING BELOW
+ok("  \x{1E01}" =~ qr/\x{1E00}/i,
+   "<20030808193656.5109.1@llama.ni-s.u-net.com>");
+
+# DESERET SMALL/CAPITAL LETTER LONG I
+ok("  \x{10428}" =~ qr/\x{10400}/i,
+   "<20030808193656.5109.1@llama.ni-s.u-net.com>");
+
+# LATIN SMALL/CAPITAL LETTER A WITH RING BELOW + 'X'
+ok("  \x{1E01}x" =~ qr/\x{1E00}X/i,
+   "<20030808193656.5109.1@llama.ni-s.u-net.com>");
+
+{
+    # [perl #23769] Unicode regex broken on simple example
+    # regrepeat() didn't handle UTF-8 EXACT case right.
+
+    my $s = "\x{a0}\x{a0}\x{a0}\x{100}"; chop $s;
+
+    ok($s =~ /\x{a0}/,       "[perl #23769]");
+    ok($s =~ /\x{a0}+/,      "[perl #23769]");
+    ok($s =~ /\x{a0}\x{a0}/, "[perl #23769]");
+
+    ok("aaa\x{100}" =~ /(a+)/, "[perl #23769] easy invariant");
+    ok($1 eq "aaa", "[perl #23769]");
+
+    ok("\xa0\xa0\xa0\x{100}" =~ /(\xa0+)/, "[perl #23769] regrepeat invariant");
+    ok($1 eq "\xa0\xa0\xa0", "[perl #23769]");
+
+    ok("ababab\x{100}  " =~ /((?:ab)+)/, "[perl #23769] hard invariant");
+    ok($1 eq "ababab", "[perl #23769]");
+
+    ok("\xa0\xa1\xa0\xa1\xa0\xa1\x{100}" =~ /((?:\xa0\xa1)+)/, "[perl #23769] hard variant");
+    ok($1 eq "\xa0\xa1\xa0\xa1\xa0\xa1", "[perl #23769]");
+
+    ok("aaa\x{100}     " =~ /(a+?)/, "[perl #23769] easy invariant");
+    ok($1 eq "a", "[perl #23769]");
+
+    ok("\xa0\xa0\xa0\x{100}    " =~ /(\xa0+?)/, "[perl #23769] regrepeat variant");
+    ok($1 eq "\xa0", "[perl #23769]");
+
+    ok("ababab\x{100}  " =~ /((?:ab)+?)/, "[perl #23769] hard invariant");
+    ok($1 eq "ab", "[perl #23769]");
+
+    ok("\xa0\xa1\xa0\xa1\xa0\xa1\x{100}" =~ /((?:\xa0\xa1)+?)/, "[perl #23769] hard variant");
+    ok($1 eq "\xa0\xa1", "[perl #23769]");
+
+    ok("\xc4\xc4\xc4" !~ /(\x{100}+)/, "[perl #23769] don't match first byte of utf8 representation");
+    ok("\xc4\xc4\xc4" !~ /(\x{100}+?)/, "[perl #23769] don't match first byte of utf8 representation");
+}
+
+for (120 .. 130) {
+    my $head = 'x' x $_;
+    for my $tail ('\x{0061}', '\x{1234}') {
+	ok(
+	    eval qq{ "$head$tail" =~ /$head$tail/ },
+	    '\x{...} misparsed in regexp near 127 char EXACT limit'
+	);
+    }
+}
+
+# perl #25269: panic: pp_match start/end pointers
+ok("a-bc" eq eval {
+	my($x, $y) = "bca" =~ /^(?=.*(a)).*(bc)/;
+	"$x-$y";
+}, 'captures can move backwards in string');
+
+# last test 1056
 

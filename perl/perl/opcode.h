@@ -2,7 +2,7 @@
  *    opcode.h
  *
  *    Copyright (C) 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -1617,8 +1617,8 @@ EXT U32 PL_opargs[] = {
 	0x00004805,	/* anonhash */
 	0x05326801,	/* splice */
 	0x0004691d,	/* push */
-	0x00007604,	/* pop */
-	0x00007604,	/* shift */
+	0x00017604,	/* pop */
+	0x00017604,	/* shift */
 	0x0004691d,	/* unshift */
 	0x0005a801,	/* sort */
 	0x00004809,	/* reverse */

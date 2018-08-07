@@ -1,7 +1,7 @@
 /*    patchlevel.h
  *
  *    Copyright (C) 1993, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -15,7 +15,7 @@
 
 #define PERL_REVISION	5		/* age */
 #define PERL_VERSION	8		/* epoch */
-#define PERL_SUBVERSION	1		/* generation */
+#define PERL_SUBVERSION	4		/* generation */
 
 /* The following numbers describe the earliest compatible version of
    Perl ("compatibility" here being defined as sufficient binary/API
@@ -51,7 +51,7 @@
 	please place your applied patch line after its dependencies. This
 	will help tracking of patch dependencies.
 
-	Please either use 'diff -u --context=0' if your diff supports
+	Please either use 'diff --unified=0' if your diff supports
 	that or edit the hunk of the diff output which adds your patch
 	to this list, to remove context lines which would give patch
 	problems. For instance, if the original context diff is
@@ -73,6 +73,7 @@
 	   *** 41,43 ***
 	   --- 41,44 ---
 	   + 	,"MINE001 - my new patch"
+	     	,NULL
 	     };
 	
 	(Note changes to line numbers as well as removal of context lines.)
@@ -119,8 +120,7 @@ hunk.
 #if !defined(PERL_PATCHLEVEL_H_IMPLICIT) && !defined(LOCAL_PATCH_COUNT)
 static	char	*local_patches[] = {
         NULL
-        ,"RC3"
-        ,NULL
+	,NULL
 };
 
 

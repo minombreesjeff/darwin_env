@@ -1,7 +1,7 @@
 /*    doio.c
  *
  *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -48,9 +48,7 @@
 #  define OPEN_EXCL 0
 #endif
 
-#if !defined(NSIG) || defined(M_UNIX) || defined(M_XENIX)
 #include <signal.h>
-#endif
 
 bool
 Perl_do_open(pTHX_ GV *gv, register char *name, I32 len, int as_raw,
@@ -94,7 +92,7 @@ Perl_do_openn(pTHX_ GV *gv, register char *name, I32 len, int as_raw,
 
     /* Collect default raw/crlf info from the op */
     if (PL_op && PL_op->op_type == OP_OPEN) {
-	/* set up disciplines */
+	/* set up IO layers */
 	U8 flags = PL_op->op_private;
 	in_raw = (flags & OPpOPEN_IN_RAW);
 	in_crlf = (flags & OPpOPEN_IN_CRLF);
@@ -179,7 +177,7 @@ Perl_do_openn(pTHX_ GV *gv, register char *name, I32 len, int as_raw,
 		 (ismodifying & (O_CREAT|appendtrunc)))
 		  TAINT_PROPER("sysopen");
 	}
-	mode[ix++] = '#'; /* Marker to openn to use numeric "sysopen" */
+	mode[ix++] = IoTYPE_NUMERIC; /* Marker to openn to use numeric "sysopen" */
 
 #if defined(USE_64_BIT_RAWIO) && defined(O_LARGEFILE)
 	rawmode |= O_LARGEFILE;	/* Transparently largefiley. */
@@ -212,7 +210,7 @@ Perl_do_openn(pTHX_ GV *gv, register char *name, I32 len, int as_raw,
 	    *--tend = '\0';
 
 	if (num_svs) {
-	    /* New style explict name, type is just mode and discipline/layer info */
+	    /* New style explicit name, type is just mode and layer info */
 	    STRLEN l = 0;
 #ifdef USE_STDIO
 	    if (SvROK(*svp) && !strchr(name,'&')) {
@@ -236,7 +234,7 @@ Perl_do_openn(pTHX_ GV *gv, register char *name, I32 len, int as_raw,
 	if ((*type == IoTYPE_RDWR) && /* scary */
            (*(type+1) == IoTYPE_RDONLY || *(type+1) == IoTYPE_WRONLY) &&
 	    ((!num_svs || (tend > type+1 && tend[-1] != IoTYPE_PIPE)))) {
-        TAINT_PROPER("open");
+	    TAINT_PROPER("open");
 	    mode[1] = *type++;
 	    writing = 1;
 	}
@@ -244,7 +242,7 @@ Perl_do_openn(pTHX_ GV *gv, register char *name, I32 len, int as_raw,
 	if (*type == IoTYPE_PIPE) {
 	    if (num_svs) {
 		if (type[1] != IoTYPE_STD) {
-	          unknown_desr:
+	          unknown_open_mode:
 		    Perl_croak(aTHX_ "Unknown open() mode '%.*s'", (int)olen, oname);
 		}
 		type++;
@@ -289,7 +287,7 @@ Perl_do_openn(pTHX_ GV *gv, register char *name, I32 len, int as_raw,
 		    }
 		}
 	    }
-	}
+	} /* IoTYPE_PIPE */
 	else if (*type == IoTYPE_WRONLY) {
 	    TAINT_PROPER("open");
 	    type++;
@@ -422,7 +420,9 @@ Perl_do_openn(pTHX_ GV *gv, register char *name, I32 len, int as_raw,
 		    fp = PerlIO_openn(aTHX_ type,mode,-1,0,0,NULL,num_svs,svp);
 		}
 	    } /* !& */
-	}
+	    if (!fp && type && *type && *type != ':' && !isIDFIRST(*type))
+	       goto unknown_open_mode;
+	} /* IoTYPE_WRONLY */
 	else if (*type == IoTYPE_RDONLY) {
 	    /*SUPPRESS 530*/
 	    for (type++; isSPACE(*type); type++) ;
@@ -453,8 +453,11 @@ Perl_do_openn(pTHX_ GV *gv, register char *name, I32 len, int as_raw,
 		}
 		fp = PerlIO_openn(aTHX_ type,mode,-1,0,0,NULL,num_svs,svp);
 	    }
-	}
-	else if ((num_svs && type[0] == IoTYPE_STD && type[1] == IoTYPE_PIPE) ||
+	    if (!fp && type && *type && *type != ':' && !isIDFIRST(*type))
+	       goto unknown_open_mode;
+	} /* IoTYPE_RDONLY */
+	else if ((num_svs && /* '-|...' or '...|' */
+		  type[0] == IoTYPE_STD && type[1] == IoTYPE_PIPE) ||
 	         (!num_svs && tend > type+1 && tend[-1] == IoTYPE_PIPE)) {
 	    if (num_svs) {
 		type += 2;   /* skip over '-|' */
@@ -499,9 +502,9 @@ Perl_do_openn(pTHX_ GV *gv, register char *name, I32 len, int as_raw,
 		}
 	    }
 	}
-	else {
+	else { /* layer(Args) */
 	    if (num_svs)
-		goto unknown_desr;
+		goto unknown_open_mode;
 	    name = type;
 	    IoTYPE(io) = IoTYPE_RDONLY;
 	    /*SUPPRESS 530*/
@@ -674,8 +677,8 @@ Perl_do_openn(pTHX_ GV *gv, register char *name, I32 len, int as_raw,
 	if (IoTYPE(io) == IoTYPE_SOCKET
 	    || (IoTYPE(io) == IoTYPE_WRONLY && fd >= 0 && S_ISCHR(PL_statbuf.st_mode)) ) {
 	    char *s = mode;
-	    if (*s == 'I' || *s == '#')
-	     s++;
+	    if (*s == IoTYPE_IMPLICIT || *s == IoTYPE_NUMERIC)
+	      s++;
 	    *s = 'w';
 	    if (!(IoOFP(io) = PerlIO_openn(aTHX_ type,s,fd,0,0,NULL,0,svp))) {
 		PerlIO_close(fp);
@@ -720,11 +723,13 @@ Perl_nextargv(pTHX_ register GV *gv)
     if (PL_filemode & (S_ISUID|S_ISGID)) {
 	PerlIO_flush(IoIFP(GvIOn(PL_argvoutgv)));  /* chmod must follow last write */
 #ifdef HAS_FCHMOD
-	(void)fchmod(PL_lastfd,PL_filemode);
+	if (PL_lastfd != -1)
+	    (void)fchmod(PL_lastfd,PL_filemode);
 #else
 	(void)PerlLIO_chmod(PL_oldname,PL_filemode);
 #endif
     }
+    PL_lastfd = -1;
     PL_filemode = 0;
     if (!GvAV(gv))
         return Nullfp;
@@ -932,8 +937,8 @@ Perl_do_pipe(pTHX_ SV *sv, GV *rgv, GV *wgv)
 
     if (PerlProc_pipe(fd) < 0)
 	goto badexit;
-    IoIFP(rstio) = PerlIO_fdopen(fd[0], "r"PIPESOCK_MODE);
-    IoOFP(wstio) = PerlIO_fdopen(fd[1], "w"PIPESOCK_MODE);
+    IoIFP(rstio) = PerlIO_fdopen(fd[0], "r"PIPE_OPEN_MODE);
+    IoOFP(wstio) = PerlIO_fdopen(fd[1], "w"PIPE_OPEN_MODE);
     IoOFP(rstio) = IoIFP(rstio);
     IoIFP(wstio) = IoOFP(wstio);
     IoTYPE(rstio) = IoTYPE_RDONLY;
@@ -1165,7 +1170,7 @@ fail_discipline:
 		if (!end)
 		    end = s+len;
 #ifndef PERLIO_LAYERS
-		Perl_croak(aTHX_ "Unknown discipline '%.*s'", end-s, s);
+		Perl_croak(aTHX_ "IO layers (like '%.*s') unavailable", end-s, s);
 #else
 		s = end;
 #endif
@@ -1543,7 +1548,7 @@ Perl_do_exec3(pTHX_ char *cmd, int fd, int do_report)
 
 		while (*t && isSPACE(*t))
 		    ++t;
-		if (!*t && (dup2(1,2) != -1)) {
+		if (!*t && (PerlLIO_dup2(1,2) != -1)) {
 		    s[-2] = '\0';
 		    break;
 		}
@@ -2285,8 +2290,9 @@ Perl_start_glob (pTHX_ SV *tmpglob, IO *io)
 		if (*cp == '?') *cp = '%';  /* VMS style single-char wildcard */
 	    while (ok && ((sts = lib$find_file(&wilddsc,&rsdsc,&cxt,
 					       &dfltdsc,NULL,NULL,NULL))&1)) {
-		end = rstr + (unsigned long int) *rslt;
-		if (!hasver) while (*end != ';') end--;
+		/* with varying string, 1st word of buffer contains result length */
+		end = rstr + *((unsigned short int*)rslt);
+		if (!hasver) while (*end != ';' && end > rstr) end--;
 		*(end++) = '\n';  *end = '\0';
 		for (cp = rstr; *cp; cp++) *cp = _tolower(*cp);
 		if (hasdir) {

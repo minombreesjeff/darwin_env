@@ -3,7 +3,7 @@ package Carp;
 
 =head1 NAME
 
-Carp heavy machinery - no user serviceable parts inside
+Carp::Heavy - heavy machinery, no user serviceable parts inside
 
 =cut
 
@@ -34,7 +34,7 @@ sub caller_info {
       push @args, '...';
     }
     # Push the args onto the subroutine
-    $sub_name .= '(' . join (',', @args) . ')';
+    $sub_name .= '(' . join (', ', @args) . ')';
   }
   $call_info{sub_name} = $sub_name;
   return wantarray() ? %call_info : \%call_info;

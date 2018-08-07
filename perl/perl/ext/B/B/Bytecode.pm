@@ -174,6 +174,7 @@ sub B::HV::ix {
 		for @array;
 	    asm "xnv", $hv->NVX;
 	    asm "xmg_stash", $stashix;
+	    asm "xhv_riter", $hv->RITER;
 	}
 	asm "sv_refcnt", $hv->REFCNT;
 	$ix;
@@ -357,7 +358,7 @@ sub B::AV::bsave {
 
     nice "-AV-",
     asm "ldsv", $varix = $ix unless $ix == $varix;
-    asm "av_extend", $av->MAX;
+    asm "av_extend", $av->MAX if $av->MAX >= 0;
     asm "av_pushx", $_ for @array;
     asm "sv_refcnt", $av->REFCNT;
     asm "xav_flags", $av->AvFLAGS;
@@ -734,15 +735,17 @@ sub compile {
     }
     if ($scan) {
 	my $f;
-	open $f, $scan
-	    or bwarn("cannot rescan '$_'"), next;
-	while (<$f>) {
-	    /^#\s*line\s+\d+\s+("?)(.*)\1/ and $files{$2} = 1;
-	    /^#/ and next;
-	    if (/\bgoto\b/ && !$keep_syn) {
-		bwarn "keeping the syntax tree: \"goto\" op found";
-		keep_syn;
+	if (open $f, $scan) {
+	    while (<$f>) {
+		/^#\s*line\s+\d+\s+("?)(.*)\1/ and $files{$2} = 1;
+		/^#/ and next;
+		if (/\bgoto\b\s*[^&]/ && !$keep_syn) {
+		    bwarn "keeping the syntax tree: \"goto\" op found";
+		    keep_syn;
+		}
 	    }
+	} else {
+	    bwarn "cannot rescan '$scan'";
 	}
 	close $f;
     }

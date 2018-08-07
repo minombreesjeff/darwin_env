@@ -189,10 +189,9 @@ test.  Outside a C<while> test, this will not happen.
 
 Special package variables when using sort(), see L<perlfunc/sort>.
 Because of this specialness $a and $b don't need to be declared
-(using local(), use vars, or our()) even when using the strict
-vars pragma.  Don't lexicalize them with C<my $a> or C<my $b>
-if you want to be able to use them in the sort() comparison block
-or function.
+(using use vars, or our()) even when using the C<strict 'vars'> pragma.
+Don't lexicalize them with C<my $a> or C<my $b> if you want to be
+able to use them in the sort() comparison block or function.
 
 =back
 
@@ -293,8 +292,6 @@ C<$+[1]> is the offset past where $1 ends, C<$+[2]> the offset
 past where $2 ends, and so on.  You can use C<$#+> to determine
 how many subgroups were in the last successful match.  See the
 examples given for the C<@-> variable.
-
-=item $MULTILINE_MATCHING
 
 =item $*
 
@@ -490,8 +487,6 @@ taken for something more important.)
 
 Consider using "real" multidimensional arrays as described
 in L<perllol>.
-
-=item $OFMT
 
 =item $#
 
@@ -918,6 +913,11 @@ of perl in the right bracket?)  Example:
 
 See also the documentation of C<use VERSION> and C<require VERSION>
 for a convenient way to fail if the running Perl interpreter is too old.
+
+When testing the variable, to steer clear of floating point
+inaccuracies you might want to prefer the inequality tests C<< < >>
+and C<< > >> to the tests containing equivalence: C<< <= >>, C<< == >>,
+and C<< >= >>.
 
 The floating point representation can sometimes lead to inaccurate
 numeric comparisons.  See C<$^V> for a more modern representation of

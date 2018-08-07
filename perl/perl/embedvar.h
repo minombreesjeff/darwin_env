@@ -1,7 +1,7 @@
 /*
  *    embedvar.h
  *
- *    Copyright (C) 1999, 2000, 2001, 2002, 2003, by Larry Wall and others
+ *    Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -267,6 +267,7 @@
 #define PL_expect		(PERL_GET_INTERP->Iexpect)
 #define PL_fdpid		(PERL_GET_INTERP->Ifdpid)
 #define PL_fdpid_mutex		(PERL_GET_INTERP->Ifdpid_mutex)
+#define PL_fdscript		(PERL_GET_INTERP->Ifdscript)
 #define PL_filemode		(PERL_GET_INTERP->Ifilemode)
 #define PL_forkprocess		(PERL_GET_INTERP->Iforkprocess)
 #define PL_formfeed		(PERL_GET_INTERP->Iformfeed)
@@ -390,6 +391,8 @@
 #define PL_reentrant_retint	(PERL_GET_INTERP->Ireentrant_retint)
 #define PL_regex_pad		(PERL_GET_INTERP->Iregex_pad)
 #define PL_regex_padav		(PERL_GET_INTERP->Iregex_padav)
+#define PL_rehash_seed		(PERL_GET_INTERP->Irehash_seed)
+#define PL_rehash_seed_set	(PERL_GET_INTERP->Irehash_seed_set)
 #define PL_replgv		(PERL_GET_INTERP->Ireplgv)
 #define PL_rsfp			(PERL_GET_INTERP->Irsfp)
 #define PL_rsfp_filters		(PERL_GET_INTERP->Irsfp_filters)
@@ -417,6 +420,7 @@
 #define PL_sublex_info		(PERL_GET_INTERP->Isublex_info)
 #define PL_subline		(PERL_GET_INTERP->Isubline)
 #define PL_subname		(PERL_GET_INTERP->Isubname)
+#define PL_suidscript		(PERL_GET_INTERP->Isuidscript)
 #define PL_sv_arenaroot		(PERL_GET_INTERP->Isv_arenaroot)
 #define PL_sv_count		(PERL_GET_INTERP->Isv_count)
 #define PL_sv_lock_mutex	(PERL_GET_INTERP->Isv_lock_mutex)
@@ -585,6 +589,7 @@
 #define PL_expect		(vTHX->Iexpect)
 #define PL_fdpid		(vTHX->Ifdpid)
 #define PL_fdpid_mutex		(vTHX->Ifdpid_mutex)
+#define PL_fdscript		(vTHX->Ifdscript)
 #define PL_filemode		(vTHX->Ifilemode)
 #define PL_forkprocess		(vTHX->Iforkprocess)
 #define PL_formfeed		(vTHX->Iformfeed)
@@ -708,6 +713,8 @@
 #define PL_reentrant_retint	(vTHX->Ireentrant_retint)
 #define PL_regex_pad		(vTHX->Iregex_pad)
 #define PL_regex_padav		(vTHX->Iregex_padav)
+#define PL_rehash_seed		(vTHX->Irehash_seed)
+#define PL_rehash_seed_set	(vTHX->Irehash_seed_set)
 #define PL_replgv		(vTHX->Ireplgv)
 #define PL_rsfp			(vTHX->Irsfp)
 #define PL_rsfp_filters		(vTHX->Irsfp_filters)
@@ -735,6 +742,7 @@
 #define PL_sublex_info		(vTHX->Isublex_info)
 #define PL_subline		(vTHX->Isubline)
 #define PL_subname		(vTHX->Isubname)
+#define PL_suidscript		(vTHX->Isuidscript)
 #define PL_sv_arenaroot		(vTHX->Isv_arenaroot)
 #define PL_sv_count		(vTHX->Isv_count)
 #define PL_sv_lock_mutex	(vTHX->Isv_lock_mutex)
@@ -906,6 +914,7 @@
 #define PL_Iexpect		PL_expect
 #define PL_Ifdpid		PL_fdpid
 #define PL_Ifdpid_mutex		PL_fdpid_mutex
+#define PL_Ifdscript		PL_fdscript
 #define PL_Ifilemode		PL_filemode
 #define PL_Iforkprocess		PL_forkprocess
 #define PL_Iformfeed		PL_formfeed
@@ -1029,6 +1038,8 @@
 #define PL_Ireentrant_retint	PL_reentrant_retint
 #define PL_Iregex_pad		PL_regex_pad
 #define PL_Iregex_padav		PL_regex_padav
+#define PL_Irehash_seed		PL_rehash_seed
+#define PL_Irehash_seed_set	PL_rehash_seed_set
 #define PL_Ireplgv		PL_replgv
 #define PL_Irsfp		PL_rsfp
 #define PL_Irsfp_filters	PL_rsfp_filters
@@ -1056,6 +1067,7 @@
 #define PL_Isublex_info		PL_sublex_info
 #define PL_Isubline		PL_subline
 #define PL_Isubname		PL_subname
+#define PL_Isuidscript		PL_suidscript
 #define PL_Isv_arenaroot	PL_sv_arenaroot
 #define PL_Isv_count		PL_sv_count
 #define PL_Isv_lock_mutex	PL_sv_lock_mutex
@@ -1421,6 +1433,7 @@
 
 #define PL_No			(PL_Vars.GNo)
 #define PL_Yes			(PL_Vars.GYes)
+#define PL_csighandlerp		(PL_Vars.Gcsighandlerp)
 #define PL_curinterp		(PL_Vars.Gcurinterp)
 #define PL_do_undump		(PL_Vars.Gdo_undump)
 #define PL_dollarzero_mutex	(PL_Vars.Gdollarzero_mutex)
@@ -1437,6 +1450,7 @@
 
 #define PL_GNo			PL_No
 #define PL_GYes			PL_Yes
+#define PL_Gcsighandlerp	PL_csighandlerp
 #define PL_Gcurinterp		PL_curinterp
 #define PL_Gdo_undump		PL_do_undump
 #define PL_Gdollarzero_mutex	PL_dollarzero_mutex

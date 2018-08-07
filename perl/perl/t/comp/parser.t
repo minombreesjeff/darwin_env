@@ -9,7 +9,7 @@ BEGIN {
 }
 
 require "./test.pl";
-plan( tests => 39 );
+plan( tests => 43 );
 
 eval '%@x=0;';
 like( $@, qr/^Can't modify hash dereference in repeat \(x\)/, '%@x=0' );
@@ -122,4 +122,31 @@ EOF
     my $result = eval $eval;
     ok($@ eq  '', "eval $eval");
     is(ref $result, $expect ? 'HASH' : '', $eval);
+}
+
+# Bug #24212
+{
+    local $SIG{__WARN__} = sub { }; # silence mandatory warning
+    eval q{ my $x = -F 1; };
+    like( $@, qr/(?:syntax|parse) error .* near "F 1"/, "unknown filetest operators" );
+    is(
+        eval q{ sub F { 42 } -F 1 },
+	'-42',
+	'-F calls the F function'
+    );
+}
+
+# Bug #24762
+{
+    eval q{ *foo{CODE} ? 1 : 0 };
+    is( $@, '', "glob subscript in conditional" );
+}
+
+# Bug #27024
+{
+    # this used to segfault (because $[=1 is optimized away to a null block)
+    my $x;
+    $[ = 1 while $x;
+    pass();
+    $[ = 0; # restore the original value for less side-effects
 }

@@ -68,3 +68,7 @@ d_dirnamlen='define'
 # Ultrix can mmap only character devices, not regular files,
 # which is rather useless state of things for Perl.
 d_mmap='undef'
+
+# There simply isn't dynaloading in Ultrix.
+usedl='undef'
+

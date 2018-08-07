@@ -1,8 +1,8 @@
 ## Toplevel Makefile for cross-compilation of perl
 #
-## $Id: Makefile,v 1.3 2003/05/27 21:23:19 red Exp red $
+## $Id: Makefile,v 1.7 2004/01/12 15:41:02 red Exp red $
 
-export TOPDIR?=${shell pwd}
+export TOPDIR=${shell pwd}
 include $(TOPDIR)/config
 export CFLAGS
 export SYS=$(ARCH)-$(OS)
@@ -39,9 +39,15 @@ gen_patch:
 	diff -Bbur ../installperl installperl > installperl.patch
 
 patch:
-	cd .. ; patch -p1 < Cross/Makefile.SH.patch
-	cd .. ; patch -p1 < Cross/installperl.patch ; mv installperl installperl-patched
-	cd .. ; sed -e 's/XXSTRIPXX/$(SYS)/' installperl-patched > installperl
+	cd .. ; if [ ! -e ./CROSS_PATCHED ] ; then \
+		patch -p1 < Cross/Makefile.SH.patch; \
+		patch -p1 < Cross/installperl.patch ; mv installperl installperl-patched; \
+		sed -e 's/XXSTRIPXX/$(SYS)/' installperl-patched > installperl; \
+		touch CROSS_PATCHED ; fi
+
+dry_patch:
+	cd .. ;	patch --dry-run -p1 < Cross/Makefile.SH.patch; \
+		patch --dry-run -p1 < Cross/installperl.patch; \
 
 perl:
 	@echo Perl cross-build directory is $(TOPDIR)
@@ -50,7 +56,6 @@ perl:
 	@echo Optimizations: $(FULL_OPTIMIZATION)
 
 	$(TOPDIR)/generate_config_sh config.sh-$(SYS) > $(TOPDIR)/../config.sh
-	$(TOPDIR)/generate_config_sh config.sh-$(SYS) > $(TOPDIR)/../config.sh-arse
 	cd $(TOPDIR)/.. ; ./Configure -S ; make depend ; make ; make more
 	cd $(TOPDIR)/.. ; mkdir -p fake_config_library ; cp lib/Config.pm fake_config_library
 	cd $(TOPDIR)/.. ; $(MAKE) more2 "PERLRUN=/usr/bin/perl -I$(TOPDIR)/../fake_config_library -MConfig"

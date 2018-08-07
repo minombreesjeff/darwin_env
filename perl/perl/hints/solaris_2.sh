@@ -24,13 +24,18 @@
 d_suidsafe=${d_suidsafe:-define}
 
 # Be paranoid about nm failing to find symbols
-mistrustnm=run
+mistrustnm=${mistrustnm:-run}
 
 # Several people reported problems with perl's malloc, especially
 # when use64bitall is defined or when using gcc.
 #     http://www.xray.mpe.mpg.de/mailing-lists/perl5-porters/2001-01/msg01318.html
 #     http://www.xray.mpe.mpg.de/mailing-lists/perl5-porters/2001-01/msg00465.html
 usemymalloc=${usemymalloc:-false}
+
+# malloc wrap works
+case "$usemallocwrap" in
+'') usemallocwrap='define' ;;
+esac
 
 # Avoid all libraries in /usr/ucblib.
 # /lib is just a symlink to /usr/lib
@@ -210,7 +215,7 @@ if echo "$verbose" | grep '^Reading specs from' >/dev/null 2>&1; then
 	#
 	# Using gcc.
 	#
-	ccversion='gcc'
+	cc_name='gcc'
 
 	# See if as(1) is GNU as(1).  GNU as(1) might not work for this job.
 	if echo "$verbose" | grep ' /usr/ccs/bin/as ' >/dev/null 2>&1; then
@@ -294,9 +299,12 @@ return(0);
 EOM
 	tryworkshopcc="${cc:-cc} try.c -o try"
 	if $tryworkshopcc >/dev/null 2>&1; then
-		ccversion=`./try`
-		if test "$ccversion" = "workshop" -a ! "$use64bitall_done"; then
-			loclibpth="/usr/lib /usr/ccs/lib `$getworkshoplibs` $loclibpth"
+		cc_name=`./try`
+		if test "$cc_name" = "workshop"; then
+			ccversion="`${cc:-cc} -V 2>&1|sed -n -e '1s/^cc: //p'`"
+			if test ! "$use64bitall_done"; then
+				loclibpth="/usr/lib /usr/ccs/lib `$getworkshoplibs` $loclibpth"
+			fi
 		fi
 	fi
 
@@ -331,20 +339,6 @@ END
 	fi
 fi
 
-# Check to see if the selected compiler and linker
-# support the -z ignore, -z lazyload and -z combreloc flags.
-echo "int main() { return(0); } " > try.c
-	zflgs=''
-for zf in ignore lazyload combreloc; do
-	if ${cc:-cc} -o try try.c -z $zf > /dev/null 2>&1; then
-		zflgs="$zflgs -z $zf"
-	fi
-done
-if test -n "$zflgs"; then
-	ccdlflags="$ccdlflags $zflgs"
-	lddlflags="$lddlflags -G $zflgs"
-fi
-
 # as --version or ld --version might dump core.
 rm -f try try.c core
 EOCBU
@@ -356,10 +350,24 @@ case "$usethreads" in
 $define|true|[yY]*)
         ccflags="-D_REENTRANT $ccflags"
 
-	sched_yield='yield'
+	# -lpthread overrides some lib C functions, so put it before c.
         set `echo X "$libswanted "| sed -e "s/ c / pthread c /"`
         shift
         libswanted="$*"
+
+	# sched_yield is available in the -lrt library.  However,
+	# we can also pick up the equivalent yield() function in the
+	# normal C library.  To avoid pulling in unnecessary
+	# libraries, we'll normally avoid sched_yield()/-lrt and
+	# just use yield().  However, we'll honor a command-line
+	# override : "-Dsched_yield=sched_yield".
+	# If we end up using sched_yield, we're going to need -lrt.
+	sched_yield=${sched_yield:-yield}
+	if test "$sched_yield" = "sched_yield"; then
+	    set `echo X "$libswanted "| sed -e "s/ pthread / rt pthread /"`
+	    shift
+	    libswanted="$*"
+	fi
 
         # On Solaris 2.6 x86 there is a bug with sigsetjmp() and siglongjmp()
         # when linked with the threads library, such that whatever positive
@@ -459,15 +467,12 @@ EOM
 		exit 1
 		;;
 	    esac
-	    ;;
-esac
+
 # gcc-2.8.1 on Solaris 8 with -Duse64bitint fails op/pat.t test 822
 # if we compile regexec.c with -O.  Turn off optimization for that one
 # file.  See hints/README.hints , especially 
 # =head2 Propagating variables to config.sh, method 3.
 #  A. Dougherty  May 24, 2002
-case "$use64bitint" in
-"$define")
     case "${gccversion}-${optimize}" in
     2.8*-O*)
 	# Honor a command-line override (rather unlikely)
@@ -527,14 +532,13 @@ EOM
 	        loclibpth="/usr/lib/sparcv9 $loclibpth"
 		ccflags="$ccflags -mcpu=v9 -m64"
 		if test X`getconf XBS5_LP64_OFF64_CFLAGS 2>/dev/null` != X; then
+		    # This adds in -Wa,-xarch=v9.  I suspect that's superfluous,
+		    # since the -m64 above should do that already.  Someone
+		    # with gcc-3.x.x, please test with gcc -v.   A.D. 20-Nov-2003
 		    ccflags="$ccflags -Wa,`getconf XBS5_LP64_OFF64_CFLAGS 2>/dev/null`"
 		fi
-		# no changes to ld flags, as (according to man ld):
-		#
-   		# There is no specific option that tells ld to link 64-bit
-		# objects; the class of the first object that gets processed
-		# by ld determines whether it is to perform a 32-bit or a
-		# 64-bit link edit.
+		ldflags="$ldflags -m64"
+		lddlflags="$lddlflags -G -m64"
 		;;
 	    *)
 		ccflags="$ccflags `getconf XBS5_LP64_OFF64_CFLAGS 2>/dev/null`"
@@ -567,7 +571,7 @@ cat > UU/uselongdouble.cbu <<'EOCBU'
 # after it has prompted the user for whether to use long doubles.
 case "$uselongdouble" in
 "$define"|true|[yY]*)
-	if test "$ccversion" = "workshop"; then
+	if test "$cc_name" = "workshop"; then
 		cat > try.c << 'EOM'
 #include <sunmath.h>
 int main() { (void) powl(2, 256); return(0); }

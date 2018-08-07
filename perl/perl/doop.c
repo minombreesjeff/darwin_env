@@ -1,7 +1,7 @@
 /*    doop.c
  *
  *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, by Larry Wall and others
+ *    2000, 2001, 2002, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -17,9 +17,7 @@
 #include "perl.h"
 
 #ifndef PERL_MICRO
-#if !defined(NSIG) || defined(M_UNIX) || defined(M_XENIX)
 #include <signal.h>
-#endif
 #endif
 
 STATIC I32
@@ -42,7 +40,7 @@ S_do_trans_simple(pTHX_ SV *sv)
     s = (U8*)SvPV(sv, len);
     send = s + len;
 
-    /* First, take care of non-UTF8 input strings, because they're easy */
+    /* First, take care of non-UTF-8 input strings, because they're easy */
     if (!SvUTF8(sv)) {
 	while (s < send) {
 	    if ((ch = tbl[*s]) >= 0) {
@@ -74,7 +72,7 @@ S_do_trans_simple(pTHX_ SV *sv)
             s += ulen;
         }
 	else { /* No match -> copy */
-	    Copy(s, d, ulen, U8);
+	    Move(s, d, ulen, U8);
 	    d += ulen;
 	    s += ulen;
         }
@@ -252,7 +250,7 @@ S_do_trans_complex(pTHX_ SV *sv)
 	        UV comp = utf8_to_uvchr(s, &len);
 		if (comp > 0xff) {
 		    if (!complement) {
-			Copy(s, d, len, U8);
+			Move(s, d, len, U8);
 			d += len;
 		    }
 		    else {
@@ -352,7 +350,7 @@ S_do_trans_simple_utf8(pTHX_ SV *sv)
 	}
 	else if (uv == none) {
 	    int i = UTF8SKIP(s);
-	    Copy(s, d, i, U8);
+	    Move(s, d, i, U8);
 	    d += i;
 	    s += i;
 	}
@@ -511,7 +509,7 @@ S_do_trans_complex_utf8(pTHX_ SV *sv)
 	    }
 	    else if (uv == none) {	/* "none" is unmapped character */
 		int i = UTF8SKIP(s);
-		Copy(s, d, i, U8);
+		Move(s, d, i, U8);
 		d += i;
 		s += i;
 		puv = 0xfeedface;
@@ -530,7 +528,7 @@ S_do_trans_complex_utf8(pTHX_ SV *sv)
 		    STRLEN len;
 		    uv = utf8_to_uvuni(s, &len);
 		    if (uv != puv) {
-			Copy(s, d, len, U8);
+			Move(s, d, len, U8);
 			d += len;
 			puv = uv;
 		    }
@@ -562,7 +560,7 @@ S_do_trans_complex_utf8(pTHX_ SV *sv)
 	    }
 	    else if (uv == none) {	/* "none" is unmapped character */
 		int i = UTF8SKIP(s);
-		Copy(s, d, i, U8);
+		Move(s, d, i, U8);
 		d += i;
 		s += i;
 		continue;
@@ -617,7 +615,9 @@ Perl_do_trans(pTHX_ SV *sv)
 
     DEBUG_t( Perl_deb(aTHX_ "2.TBL\n"));
 
-    switch (PL_op->op_private & ~hasutf & 63) {
+    switch (PL_op->op_private & ~hasutf & (
+		OPpTRANS_FROM_UTF|OPpTRANS_TO_UTF|OPpTRANS_IDENTICAL|
+		OPpTRANS_SQUASH|OPpTRANS_DELETE|OPpTRANS_COMPLEMENT)) {
     case 0:
 	if (hasutf)
 	    return do_trans_simple_utf8(sv);
@@ -669,7 +669,11 @@ Perl_do_join(pTHX_ register SV *sv, SV *del, register SV **mark, register SV **s
 	++mark;
     }
 
-    sv_setpv(sv, "");
+    sv_setpvn(sv, "", 0);
+    /* sv_setpv retains old UTF8ness [perl #24846] */
+    if (SvUTF8(sv))
+	SvUTF8_off(sv);
+
     if (PL_tainting && SvMAGICAL(sv))
 	SvTAINTED_off(sv);
 
@@ -1004,6 +1008,8 @@ Perl_do_chomp(pTHX_ register SV *sv)
     STRLEN len;
     STRLEN n_a;
     char *s;
+    char *temp_buffer = NULL;
+    SV* svrecode = Nullsv;
 
     if (RsSNARF(PL_rs))
 	return 0;
@@ -1039,6 +1045,18 @@ Perl_do_chomp(pTHX_ register SV *sv)
         if (SvREADONLY(sv))
             Perl_croak(aTHX_ PL_no_modify);
     }
+
+    if (PL_encoding) {
+	if (!SvUTF8(sv)) {
+	/* XXX, here sv is utf8-ized as a side-effect!
+	   If encoding.pm is used properly, almost string-generating
+	   operations, including literal strings, chr(), input data, etc.
+	   should have been utf8-ized already, right?
+	*/
+	    sv_recode_to_utf8(sv, PL_encoding);
+	}
+    }
+
     s = SvPV(sv, len);
     if (s && len) {
 	s += --len;
@@ -1053,8 +1071,43 @@ Perl_do_chomp(pTHX_ register SV *sv)
 	    }
 	}
 	else {
-	    STRLEN rslen;
+	    STRLEN rslen, rs_charlen;
 	    char *rsptr = SvPV(PL_rs, rslen);
+
+	    rs_charlen = SvUTF8(PL_rs)
+		? sv_len_utf8(PL_rs)
+		: rslen;
+
+	    if (SvUTF8(PL_rs) != SvUTF8(sv)) {
+		/* Assumption is that rs is shorter than the scalar.  */
+		if (SvUTF8(PL_rs)) {
+		    /* RS is utf8, scalar is 8 bit.  */
+		    bool is_utf8 = TRUE;
+		    temp_buffer = (char*)bytes_from_utf8((U8*)rsptr,
+							 &rslen, &is_utf8);
+		    if (is_utf8) {
+			/* Cannot downgrade, therefore cannot possibly match
+			 */
+			assert (temp_buffer == rsptr);
+			temp_buffer = NULL;
+			goto nope;
+		    }
+		    rsptr = temp_buffer;
+		}
+		else if (PL_encoding) {
+		    /* RS is 8 bit, encoding.pm is used.
+		     * Do not recode PL_rs as a side-effect. */
+		   svrecode = newSVpvn(rsptr, rslen);
+		   sv_recode_to_utf8(svrecode, PL_encoding);
+		   rsptr = SvPV(svrecode, rslen);
+		   rs_charlen = sv_len_utf8(svrecode);
+		}
+		else {
+		    /* RS is 8 bit, scalar is utf8.  */
+		    temp_buffer = (char*)bytes_to_utf8((U8*)rsptr, &rslen);
+		    rsptr = temp_buffer;
+		}
+	    }
 	    if (rslen == 1) {
 		if (*s != *rsptr)
 		    goto nope;
@@ -1067,7 +1120,7 @@ Perl_do_chomp(pTHX_ register SV *sv)
 		s -= rslen - 1;
 		if (memNE(s, rsptr, rslen))
 		    goto nope;
-		count += rslen;
+		count += rs_charlen;
 	    }
 	}
 	s = SvPV_force(sv, n_a);
@@ -1077,6 +1130,11 @@ Perl_do_chomp(pTHX_ register SV *sv)
 	SvSETMAGIC(sv);
     }
   nope:
+
+    if (svrecode)
+	 SvREFCNT_dec(svrecode);
+
+    Safefree(temp_buffer);
     return count;
 }
 

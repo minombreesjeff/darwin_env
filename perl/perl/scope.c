@@ -1,7 +1,7 @@
 /*    scope.c
  *
  *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -767,8 +767,8 @@ Perl_leave_scope(pTHX_ I32 base)
 		 * mg_get() in save_scalar_at() croaked */
 		SvMAGIC(value) = 0;
 	    }
-	    SvREFCNT_dec(sv);
 	    *(SV**)ptr = value;
+	    SvREFCNT_dec(sv);
 	    PL_localizing = 2;
 	    SvSETMAGIC(value);
 	    PL_localizing = 0;
@@ -1024,6 +1024,11 @@ Perl_leave_scope(pTHX_ I32 base)
 		GvHV(PL_hintgv) = NULL;
 	    }
 	    *(I32*)&PL_hints = (I32)SSPOPINT;
+	    if (PL_hints & HINT_LOCALIZE_HH) {
+		SvREFCNT_dec((SV*)GvHV(PL_hintgv));
+		GvHV(PL_hintgv) = (HV*)SSPOPPTR;
+	    }
+		    
 	    break;
 	case SAVEt_COMPPAD:
 	    PL_comppad = (PAD*)SSPOPPTR;

@@ -58,12 +58,7 @@ else {
 
 open CONFIG, ">$Config_PM" or die "Can't open $Config_PM: $!\n";
 
-my $myver;
-open(CONFIG_SH, 'config.sh') || die "Can't open config.sh: $!";
-while(<CONFIG_SH>) { if (/^version='(.+)'$/) { $myver = $1; last } }
-close(CONFIG_SH);
-die "Can't find version in config.sh\n" unless defined $myver;;
-$myver =~ s/_/./g if $^O eq 'VMS';
+my $myver = sprintf "v%vd", $^V;
 
 printf CONFIG <<'ENDOFBEG', ($myver) x 3;
 # This file was created by configpm when Perl was built. Any changes
@@ -97,9 +92,9 @@ sub import {
 die "Perl lib version (%s) doesn't match executable version ($])"
     unless $^V;
 
-my $exever = sprintf("%%vd",$^V);
-$exever eq "%s"
-    or die "Perl lib version (%s) doesn't match executable version ($exever)";
+$^V eq %s
+    or die "Perl lib version (%s) doesn't match executable version (" .
+	sprintf("v%%vd",$^V) . ")";
 
 ENDOFBEG
 
@@ -218,21 +213,24 @@ close CONFIG_SH;
 print CONFIG @non_v, "\n";
 
 # copy config summary format from the myconfig.SH script
-print CONFIG "my \$summary = <<'!END!';\n";
+print CONFIG "our \$summary : unique = <<'!END!';\n";
 open(MYCONFIG,"<myconfig.SH") || die "open myconfig.SH failed: $!";
 1 while defined($_ = <MYCONFIG>) && !/^Summary of/;
 do { print CONFIG $_ } until !defined($_ = <MYCONFIG>) || /^\s*$/;
 close(MYCONFIG);
 
+# NB. as $summary is unique, we need to copy it in a lexical variable
+# before expanding it, because may have been made readonly if a perl
+# interpreter has been cloned.
+
 print CONFIG "\n!END!\n", <<'EOT';
-my $summary_expanded = 0;
+my $summary_expanded;
 
 sub myconfig {
-    return $summary if $summary_expanded;
-    $summary =~ s{\$(\w+)}
+    return $summary_expanded if $summary_expanded;
+    ($summary_expanded = $summary) =~ s{\$(\w+)}
 		 { my $c = $Config{$1}; defined($c) ? $c : 'undef' }ge;
-    $summary_expanded = 1;
-    $summary;
+    $summary_expanded;
 }
 
 our $Config_SH : unique = <<'!END!';

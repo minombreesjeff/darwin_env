@@ -4,8 +4,8 @@ BEGIN {
 }
 use strict;
 my %alias_to = (
-    U32 => [qw(PADOFFSET STRLEN line_t)],
-    I32 => [qw(SSize_t long)],
+    U32 => [qw(line_t)],
+    PADOFFSET => [qw(STRLEN SSize_t)],
     U16 => [qw(OPCODE short)],
     U8  => [qw(char)],
 );
@@ -46,7 +46,7 @@ open(ASMDATA_PM, ">ext/B/B/Asmdata.pm") or die "ext/B/B/Asmdata.pm: $!";
 print ASMDATA_PM $perl_header, <<'EOT';
 package B::Asmdata;
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
 
 use Exporter;
 @ISA = qw(Exporter);
@@ -452,7 +452,7 @@ op_pmreplroot	cPMOP->op_pmreplroot			opindex
 op_pmreplstart	cPMOP->op_pmreplstart			opindex
 op_pmnext	*(OP**)&cPMOP->op_pmnext		opindex
 #ifdef USE_ITHREADS
-op_pmstashpv	cPMOP->op_pmstashpv			pvindex
+op_pmstashpv	cPMOP					pvindex		x
 op_pmreplrootpo	cPMOP->op_pmreplroot			OP*/PADOFFSET
 #else
 op_pmstash	*(SV**)&cPMOP->op_pmstash		svindex

@@ -1,7 +1,7 @@
 /*    pp_pack.c
  *
  *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -513,7 +513,9 @@ Perl_unpack_str(pTHX_ char *pat, register char *patend, register char *s, char *
 /*
 =for apidoc unpackstring
 
-The engine implementing unpack() Perl function.
+The engine implementing unpack() Perl function. C<unpackstring> puts the
+extracted list items on the stack and returns the number of elements.
+Issue C<PUTBACK> before and C<SPAGAIN> after the call to this function.
 
 =cut */
 
@@ -2427,11 +2429,17 @@ S_pack_rec(pTHX_ SV *cat, register tempsym_t* symptr, register SV **beglist, SV 
 		       given 10**(NV_MAX_10_EXP+1) == 128 ** x solve for x:
 		       x = (NV_MAX_10_EXP+1) * log (10) / log (128)
 		       And with that many bytes only Inf can overflow.
+		       Some C compilers are strict about integral constant
+		       expressions so we conservatively divide by a slightly
+		       smaller integer instead of multiplying by the exact
+		       floating-point value.
 		    */
 #ifdef NV_MAX_10_EXP
-		    char   buf[1 + (int)((NV_MAX_10_EXP + 1) * 0.47456)];
+/*		    char   buf[1 + (int)((NV_MAX_10_EXP + 1) * 0.47456)]; -- invalid C */
+		    char   buf[1 + (int)((NV_MAX_10_EXP + 1) / 2)]; /* valid C */
 #else
-		    char   buf[1 + (int)((308 + 1) * 0.47456)];
+/*		    char   buf[1 + (int)((308 + 1) * 0.47456)]; -- invalid C */
+		    char   buf[1 + (int)((308 + 1) / 2)]; /* valid C */
 #endif
 		    char  *in = buf + sizeof(buf);
 

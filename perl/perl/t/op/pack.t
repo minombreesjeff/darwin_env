@@ -160,7 +160,7 @@ sub list_eq ($$) {
 
 
 {
-  # test exceptions
+  print "# test exceptions\n";
   my $x;
   eval { $x = unpack 'w', pack 'C*', 0xff, 0xff};
   like($@, qr/^Unterminated compressed integer/);
@@ -180,15 +180,21 @@ sub list_eq ($$) {
  SKIP: {
     # Is this a stupid thing to do on VMS, VOS and other unusual platforms?
 
-    skip "-- the IEEE infinity model is unavailable in this configuration."
+    skip("-- the IEEE infinity model is unavailable in this configuration.", 1)
        if (($^O eq 'VMS') && !defined($Config{useieee}));
 
-    skip "-- MPE/iX has serious fp indigestionf on w-packed infinities"
-       if (($^O eq 'mpeix'));
+    skip("-- $^O has serious fp indigestion on w-packed infinities", 1)
+       if (
+	   ($^O eq 'mpeix')
+	   ||
+	   ($^O eq 'ultrix')
+	   ||
+	   ($^O =~ /^svr4/ && -f "/etc/issue" && -f "/etc/.relid") # NCR MP-RAS
+	   );
 
     my $inf = eval '2**10000';
 
-    skip "Couldn't generate infinity - got error '$@'"
+    skip("Couldn't generate infinity - got error '$@'", 1)
       unless defined $inf and $inf == $inf / 2 and $inf + 1 == $inf;
 
     local our $TODO;
@@ -201,13 +207,16 @@ sub list_eq ($$) {
 
  SKIP: {
 
-    skip "-- the full range of an IEEE double may not be available in this configuration."
+    skip("-- the full range of an IEEE double may not be available in this configuration.", 3)
        if (($^O eq 'VMS') && !defined($Config{useieee}));
+
+    skip("-- $^O does not like 2**1023", 3)
+       if (($^O eq 'ultrix'));
 
     # This should be about the biggest thing possible on an IEEE double
     my $big = eval '2**1023';
 
-    skip "Couldn't generate 2**1023 - got error '$@'", 3
+    skip("Couldn't generate 2**1023 - got error '$@'", 3)
       unless defined $big and $big != $big / 2;
 
     eval { $x = pack 'w', $big };
@@ -225,8 +234,7 @@ sub list_eq ($$) {
 
 }
 
-#
-# test the "p" template
+print "# test the 'p' template\n";
 
 # literals
 is(unpack("p",pack("p","foo")), "foo");
@@ -255,8 +263,8 @@ like(pack("p", undef), qr/^\0+/);
 #				 see #ifdef __osf__ in pp.c pp_unpack
 is((unpack("i",pack("i",-1))), -1);
 
-# test the pack lengths of s S i I l L
-# test the pack lengths of n N v V
+print "# test the pack lengths of s S i I l L n N v V\n";
+
 my @lengths = qw(s 2 S 2 i -4 I -4 l 4 L 4 n 2 N 4 v 2 V 4);
 while (my ($format, $expect) = splice @lengths, 0, 2) {
   my $len = length(pack($format, 0));
@@ -270,7 +278,8 @@ while (my ($format, $expect) = splice @lengths, 0, 2) {
 }
 
 
-# test unpack-pack lengths
+print "# test unpack-pack lengths\n";
+
 my @templates = qw(c C i I s S l L n N v V f d q Q);
 
 foreach my $t (@templates) {
@@ -367,7 +376,7 @@ foreach (
     }
 }
 
-# packing native shorts/ints/longs
+print "# packing native shorts/ints/longs\n";
 
 is(length(pack("s!", 0)), $Config{shortsize});
 is(length(pack("i!", 0)), $Config{intsize});
@@ -389,6 +398,7 @@ sub numbers_with_total {
       $total += $_;
     }
   }
+  print "# numbers test for $format\n";
   foreach (@_) {
     SKIP: {
         my $out = eval {unpack($format, pack($format, $_))};
@@ -445,7 +455,7 @@ sub numbers_with_total {
         } else {
             $calc_sum = $total;
             # Shift into range by some multiple of the total
-            my $mult = int ($total / $max_p1);
+            my $mult = $max_p1 ? int ($total / $max_p1) : undef;
             # Need this to make sure that -1 + (~0+1) is ~0 (ie still integer)
             $calc_sum = $total - $mult;
             $calc_sum -= $mult * $max;
@@ -522,7 +532,7 @@ numbers_with_total ('Q', sub {
                     0, 1,9223372036854775807, 9223372036854775808,
                     18446744073709551615);
 
-# pack nvNV byteorders
+print "# pack nvNV byteorders\n";
 
 is(pack("n", 0xdead), "\xde\xad");
 is(pack("v", 0xdead), "\xad\xde");
@@ -625,16 +635,13 @@ EOP
 }
 
 
-{
-    no warnings 'deprecated'; # v-strings
-  SKIP: {
-      skip("(EBCDIC and) version strings are bad idea", 2) if $Is_EBCDIC;
+SKIP: {
+    skip("(EBCDIC and) version strings are bad idea", 2) if $Is_EBCDIC;
 
-      is("1.20.300.4000", sprintf "%vd", pack("U*",1,20,300,4000));
-      is("1.20.300.4000", sprintf "%vd", pack("  U*",1,20,300,4000));
-  }
-    isnt(v1.20.300.4000, sprintf "%vd", pack("C0U*",1,20,300,4000));
+    is("1.20.300.4000", sprintf "%vd", pack("U*",1,20,300,4000));
+    is("1.20.300.4000", sprintf "%vd", pack("  U*",1,20,300,4000));
 }
+isnt(v1.20.300.4000, sprintf "%vd", pack("C0U*",1,20,300,4000));
 
 my $rslt = $Is_EBCDIC ? "156 67" : "199 162";
 is(join(" ", unpack("C*", chr(0x1e2))), $rslt);
@@ -659,10 +666,7 @@ SKIP: {
     is("@{[unpack('C*', pack('U*', 100, 200))]}", "100 195 136");
 
     # does pack U0C create Unicode?
-    {
-	no warnings 'deprecated'; # v-strings
-	is("@{[pack('U0C*', 100, 195, 136)]}", v100.v200);
-    }
+    is("@{[pack('U0C*', 100, 195, 136)]}", v100.v200);
 
     # does pack C0U create characters?
     is("@{[pack('C0U*', 100, 200)]}", pack("C*", 100, 195, 136));

@@ -37,7 +37,7 @@ BEGIN
     }
   print "# INC = @INC\n";
 
-  plan tests => 50;
+  plan tests => 53;
   }
 
 use Math::BigFloat;
@@ -45,7 +45,7 @@ use Math::BigInt;
 
 my $cl = "Math::BigFloat";
 
-# these tests are now really fast, since they collapse to blog(10), basically
+# These tests are now really fast, since they collapse to blog(10), basically
 # Don't attempt to run them with older versions. You are warned.
 
 # $x < 0 => NaN
@@ -68,6 +68,7 @@ ok ($cl->new(0.0001)->blog(), -$ten * 4);
 
 # also cached
 ok ($cl->new(2)->blog(), '0.6931471805599453094172321214581765680755');
+ok ($cl->new(4)->blog(), $cl->new(2)->blog * 2);
 
 # These are still slow, so do them only to 10 digits
 
@@ -97,7 +98,11 @@ ok ($cl->new('10')->bpow('0.6',10),   '3.981071706');
 
 # blog should handle bigint input
 ok (Math::BigFloat::blog(Math::BigInt->new(100),10), 2);
-ok (Math::BigInt->new(100)->blog(10), 'NaN');
+
+# some integer results
+ok ($cl->new(2)->bpow(32)->blog(2),  '32');	# 2 ** 32
+ok ($cl->new(3)->bpow(32)->blog(3),  '32');	# 3 ** 32
+ok ($cl->new(2)->bpow(65)->blog(2),  '65');	# 2 ** 65
 
 # test for bug in bsqrt() not taking negative _e into account
 test_bpow ('200','0.5',10,      '14.14213562');
@@ -127,7 +132,7 @@ sub test_bpow
   {
   my ($x,$y,$scale,$result) = @_;
 
-  print "# Tried: $x->bpow($y,$scale);\n" 
+  print "# Tried: $x->bpow($y,$scale);\n"
    unless ok ($cl->new($x)->bpow($y,$scale),$result);
   }
 

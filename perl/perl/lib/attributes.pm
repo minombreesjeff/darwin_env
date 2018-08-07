@@ -1,6 +1,6 @@
 package attributes;
 
-our $VERSION = 0.05;
+our $VERSION = 0.06;
 
 @EXPORT_OK = qw(get reftype);
 @EXPORT = ();
@@ -164,6 +164,10 @@ The following are the built-in attributes for subroutines:
 =over 4
 
 =item locked
+
+B<5.005 threads only!  The use of the "locked" attribute currently
+only makes sense if you are using the deprecated "Perl 5.005 threads"
+implementation of threads.>
 
 Setting this attribute is only meaningful when the subroutine or
 method is to be called by multiple threads.  When set on a method

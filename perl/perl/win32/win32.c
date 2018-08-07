@@ -1067,6 +1067,7 @@ win32_kill(int pid, int sig)
     dTHX;
     HANDLE hProcess;
     long child;
+    int retval;
 #ifdef USE_ITHREADS
     if (pid < 0) {
 	/* it is a pseudo-forked child */
@@ -1114,6 +1115,11 @@ win32_kill(int pid, int sig)
 		if (GenerateConsoleCtrlEvent(CTRL_C_EVENT,pid))
 		    return 0;
 		break;
+            case SIGBREAK:
+            case SIGTERM:
+                if (GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT,pid))
+                    return 0;
+                break;
 	    default: /* For now be backwards compatible with perl5.6 */
 	    case 9:
 	        if (TerminateProcess(hProcess, sig)) {
@@ -1125,25 +1131,34 @@ win32_kill(int pid, int sig)
 	}
 	else {
 alien_process:
+            retval = -1;
 	    hProcess = OpenProcess(PROCESS_ALL_ACCESS, TRUE,
 				   (IsWin95() ? -pid : pid));
 	    if (hProcess) {
 		switch(sig) {
 		case 0:
 		    /* "Does process exist?" use of kill */
-		    return 0;
+		    retval = 0;
+                    break;
 		case 2:
 		    if (GenerateConsoleCtrlEvent(CTRL_C_EVENT,pid))
-			return 0;
+			retval = 0;
 		    break;
+                case SIGBREAK:
+                case SIGTERM:
+                    if (GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT,pid))
+                       retval = 0;
+                    break;
 		default: /* For now be backwards compatible with perl5.6 */
                 case 9:
-		    if (TerminateProcess(hProcess, sig)) {
-			CloseHandle(hProcess);
-			return 0;
-		    }
+		    if (TerminateProcess(hProcess, sig))
+			retval = 0;
+                    break;
 		}
 	    }
+            CloseHandle(hProcess);
+            if (retval == 0)
+                return 0;
 	}
     }
     errno = EINVAL;
@@ -1167,6 +1182,10 @@ win32_stat(const char *path, Stat_t *sbuf)
 	/* FindFirstFile() and stat() are buggy with a trailing
 	 * backslash, so change it to a forward slash :-( */
 	case '\\':
+	    if (l >= sizeof(buffer)) {
+		errno = ENAMETOOLONG;
+		return -1;
+	    }
 	    strncpy(buffer, path, l-1);
 	    buffer[l - 1] = '/';
 	    buffer[l] = '\0';
@@ -2082,6 +2101,7 @@ alien_process:
 	    if (hProcess) {
 		win32_msgwait(aTHX_ 1, &hProcess, timeout, &waitcode);
 		if (waitcode == WAIT_TIMEOUT) {
+                    CloseHandle(hProcess);
 		    return 0;
 		}
 		else if (waitcode == WAIT_OBJECT_0) {
@@ -2562,10 +2582,14 @@ DllExport Off_t
 win32_ftell(FILE *pf)
 {
 #if defined(WIN64) || defined(USE_LARGE_FILES)
+#if defined(__BORLAND__) /* buk */
+    return win32_tell( fileno( pf ) );
+#else
     fpos_t pos;
     if (fgetpos(pf, &pos))
 	return -1;
     return (Off_t)pos;
+#endif
 #else
     return ftell(pf);
 #endif
@@ -2575,6 +2599,13 @@ DllExport int
 win32_fseek(FILE *pf, Off_t offset,int origin)
 {
 #if defined(WIN64) || defined(USE_LARGE_FILES)
+#if defined(__BORLANDC__) /* buk */
+    return win32_lseek(
+        fileno(pf),
+        offset,
+        origin
+        );
+#else
     fpos_t pos;
     switch (origin) {
     case SEEK_CUR:
@@ -2594,6 +2625,7 @@ win32_fseek(FILE *pf, Off_t offset,int origin)
 	return -1;
     }
     return fsetpos(pf, &offset);
+#endif
 #else
     return fseek(pf, offset, origin);
 #endif
@@ -2602,13 +2634,25 @@ win32_fseek(FILE *pf, Off_t offset,int origin)
 DllExport int
 win32_fgetpos(FILE *pf,fpos_t *p)
 {
+#if defined(__BORLANDC__) && defined(USE_LARGE_FILES) /* buk */
+    if( win32_tell(fileno(pf)) == -1L ) {
+        errno = EBADF;
+        return -1;
+    }
+    return 0;
+#else
     return fgetpos(pf, p);
+#endif
 }
 
 DllExport int
 win32_fsetpos(FILE *pf,const fpos_t *p)
 {
+#if defined(__BORLANDC__) && defined(USE_LARGE_FILES) /* buk */
+    return win32_lseek(fileno(pf), *p, SEEK_CUR);
+#else
     return fsetpos(pf, p);
+#endif
 }
 
 DllExport void
@@ -3114,7 +3158,7 @@ win32_chsize(int fd, Off_t size)
 	do {
 	    count = extend >= sizeof(b) ? sizeof(b) : (size_t)extend;
 	    count = win32_write(fd, b, count);
-	    if (count < 0) {
+	    if ((int)count < 0) {
 		retval = -1;
 		break;
 	    }
@@ -3141,7 +3185,23 @@ DllExport Off_t
 win32_lseek(int fd, Off_t offset, int origin)
 {
 #if defined(WIN64) || defined(USE_LARGE_FILES)
+#if defined(__BORLANDC__) /* buk */
+    LARGE_INTEGER pos;
+    pos.QuadPart = offset;
+    pos.LowPart = SetFilePointer(
+        (HANDLE)_get_osfhandle(fd),
+        pos.LowPart,
+        &pos.HighPart,
+        origin
+    );
+    if (pos.LowPart == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
+        pos.QuadPart = -1;
+    }
+
+    return pos.QuadPart;
+#else
     return _lseeki64(fd, offset, origin);
+#endif
 #else
     return lseek(fd, offset, origin);
 #endif
@@ -3151,7 +3211,24 @@ DllExport Off_t
 win32_tell(int fd)
 {
 #if defined(WIN64) || defined(USE_LARGE_FILES)
+#if defined(__BORLANDC__) /* buk */
+    LARGE_INTEGER pos;
+    pos.QuadPart = 0;
+    pos.LowPart = SetFilePointer(
+        (HANDLE)_get_osfhandle(fd),
+        pos.LowPart,
+        &pos.HighPart,
+        FILE_CURRENT
+    );
+    if (pos.LowPart == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
+        pos.QuadPart = -1;
+    }
+
+    return pos.QuadPart;
+    /* return tell(fd); */
+#else
     return _telli64(fd);
+#endif
 #else
     return tell(fd);
 #endif
@@ -3659,7 +3736,10 @@ qualified_path(const char *cmd)
 
     /* look in PATH */
     pathstr = PerlEnv_getenv("PATH");
-    New(0, fullcmd, MAX_PATH+1, char);
+
+    /* worst case: PATH is a single directory; we need additional space
+     * to append "/", ".exe" and trailing "\0" */
+    New(0, fullcmd, (pathstr ? strlen(pathstr) : 0) + cmdlen + 6, char);
     curfullcmd = fullcmd;
 
     while (1) {
@@ -3700,17 +3780,13 @@ qualified_path(const char *cmd)
 	    if (*pathstr == '"') {	/* foo;"baz;etc";bar */
 		pathstr++;		/* skip initial '"' */
 		while (*pathstr && *pathstr != '"') {
-		    if ((STRLEN)(curfullcmd-fullcmd) < MAX_PATH-cmdlen-5)
-			*curfullcmd++ = *pathstr;
-		    pathstr++;
+                    *curfullcmd++ = *pathstr++;
 		}
 		if (*pathstr)
 		    pathstr++;		/* skip trailing '"' */
 	    }
 	    else {
-		if ((STRLEN)(curfullcmd-fullcmd) < MAX_PATH-cmdlen-5)
-		    *curfullcmd++ = *pathstr;
-		pathstr++;
+                *curfullcmd++ = *pathstr++;
 	    }
 	}
 	if (*pathstr)
@@ -4545,6 +4621,9 @@ XS(w32_GetOSVersion)
                 XSRETURN_EMPTY;
             }
 	}
+	if (GIMME_V == G_SCALAR) {
+	    XSRETURN_IV(osverw.dwPlatformId);
+	}
 	W2AHELPER(osverw.szCSDVersion, szCSDVersion, sizeof(szCSDVersion));
 	XPUSHs(newSVpvn(szCSDVersion, strlen(szCSDVersion)));
         osver.dwMajorVersion    = osverw.dwMajorVersion;
@@ -4564,6 +4643,9 @@ XS(w32_GetOSVersion)
             if (!GetVersionExA((OSVERSIONINFOA*)&osver)) {
                 XSRETURN_EMPTY;
             }
+	}
+	if (GIMME_V == G_SCALAR) {
+	    XSRETURN_IV(osver.dwPlatformId);
 	}
 	XPUSHs(newSVpvn(osver.szCSDVersion, strlen(osver.szCSDVersion)));
     }

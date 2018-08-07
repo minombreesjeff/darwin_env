@@ -115,7 +115,7 @@ on the left hand side of the C<< => >> symbol.
 
     use strict 'subs';
     $SIG{PIPE} = Plumber;   	# blows up
-    $SIG{PIPE} = "Plumber"; 	# just fine: bareword in curlies always ok
+    $SIG{PIPE} = "Plumber"; 	# just fine: quoted string is always ok
     $SIG{PIPE} = \&Plumber; 	# preferred form
 
 =back
@@ -124,8 +124,13 @@ See L<perlmodlib/Pragmatic Modules>.
 
 =head1 HISTORY
 
-C<strict 'subs'>, with perl 5.6.1, erroneously permitted to use an unquoted
+C<strict 'subs'>, with Perl 5.6.1, erroneously permitted to use an unquoted
 compound identifier (e.g. C<Foo::Bar>) as a hash key (before C<< => >> or
 inside curlies), but without forcing it always to a literal string.
+
+Starting with Perl 5.8.1 strict is strict about its restrictions:
+if unknown restrictions are used, the strict pragma will abort with
+
+    Unknown 'strict' tag(s) '...'
 
 =cut

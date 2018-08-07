@@ -1,7 +1,7 @@
 /*    cop.h
  *
  *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -37,11 +37,11 @@ struct cop {
 #  define CopFILEGV(c)		(CopFILE(c) \
 				 ? gv_fetchfile(CopFILE(c)) : Nullgv)
 				 
- #ifdef NETWARE
-  #define CopFILE_set(c,pv)	((c)->cop_file = savepv(pv))
- #else
-  #define CopFILE_set(c,pv)	((c)->cop_file = savesharedpv(pv))
- #endif
+#  ifdef NETWARE
+#    define CopFILE_set(c,pv)	((c)->cop_file = savepv(pv))
+#  else
+#    define CopFILE_set(c,pv)	((c)->cop_file = savesharedpv(pv))
+#  endif
 
 #  define CopFILESV(c)		(CopFILE(c) \
 				 ? GvSV(gv_fetchfile(CopFILE(c))) : Nullsv)
@@ -49,11 +49,11 @@ struct cop {
 				 ? GvAV(gv_fetchfile(CopFILE(c))) : Nullav)
 #  define CopSTASHPV(c)		((c)->cop_stashpv)
 
-  #ifdef NETWARE
-    #define CopSTASHPV_set(c,pv)	((c)->cop_stashpv = ((pv) ? savepv(pv) : Nullch))
-  #else
-    #define CopSTASHPV_set(c,pv)	((c)->cop_stashpv = savesharedpv(pv))
-  #endif
+#  ifdef NETWARE
+#    define CopSTASHPV_set(c,pv)	((c)->cop_stashpv = ((pv) ? savepv(pv) : Nullch))
+#  else
+#    define CopSTASHPV_set(c,pv)	((c)->cop_stashpv = savesharedpv(pv))
+#  endif
 
 #  define CopSTASH(c)		(CopSTASHPV(c) \
 				 ? gv_stashpv(CopSTASHPV(c),GV_ADD) : Nullhv)
@@ -62,17 +62,17 @@ struct cop {
 				 && (CopSTASHPV(c) == HvNAME(hv)	\
 				     || (CopSTASHPV(c) && HvNAME(hv)	\
 					 && strEQ(CopSTASHPV(c), HvNAME(hv)))))
-  #ifdef NETWARE
-    #define CopSTASH_free(c) SAVECOPSTASH_FREE(c)
-  #else
-    #define CopSTASH_free(c)	PerlMemShared_free(CopSTASHPV(c))      
-  #endif
+#  ifdef NETWARE
+#    define CopSTASH_free(c) SAVECOPSTASH_FREE(c)
+#  else
+#    define CopSTASH_free(c)	PerlMemShared_free(CopSTASHPV(c))      
+#  endif
 
-  #ifdef NETWARE
-    #define CopFILE_free(c) SAVECOPFILE_FREE(c)
-  #else
-    #define CopFILE_free(c)	(PerlMemShared_free(CopFILE(c)),(CopFILE(c) = Nullch))      
-  #endif
+#  ifdef NETWARE
+#    define CopFILE_free(c) SAVECOPFILE_FREE(c)
+#  else
+#    define CopFILE_free(c)	(PerlMemShared_free(CopFILE(c)),(CopFILE(c) = Nullch))      
+#  endif
 #else
 #  define CopFILEGV(c)		((c)->cop_filegv)
 #  define CopFILEGV_set(c,gv)	((c)->cop_filegv = (GV*)SvREFCNT_inc(gv))
@@ -123,11 +123,20 @@ struct block_sub {
     PAD		*oldcomppad;
 };
 
-/* base for the next two macros. Don't use directly */
+/* base for the next two macros. Don't use directly.
+ * Note that the refcnt of the cv is incremented twice;  The CX one is
+ * decremented by LEAVESUB, the other by LEAVE. */
+
 #define PUSHSUB_BASE(cx)						\
 	cx->blk_sub.cv = cv;						\
 	cx->blk_sub.olddepth = CvDEPTH(cv);				\
-	cx->blk_sub.hasargs = hasargs;
+	cx->blk_sub.hasargs = hasargs;					\
+	if (!CvDEPTH(cv)) {						\
+	    (void)SvREFCNT_inc(cv);					\
+	    (void)SvREFCNT_inc(cv);					\
+	    SAVEFREESV(cv);						\
+	}
+
 
 #define PUSHSUB(cx)							\
 	PUSHSUB_BASE(cx)						\
@@ -578,3 +587,7 @@ typedef struct stackinfo PERL_SI;
 	    POPSTACK;							\
 	}								\
     } STMT_END
+
+#define IN_PERL_COMPILETIME	(PL_curcop == &PL_compiling)
+#define IN_PERL_RUNTIME		(PL_curcop != &PL_compiling)
+

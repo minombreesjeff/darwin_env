@@ -1,11 +1,12 @@
 # -*- Mode: cperl; coding: utf-8; cperl-indent-level: 4 -*-
 package CPAN;
-$VERSION = '1.74_01';
-# $Id: CPAN.pm,v 1.409 2003/07/28 22:07:23 k Exp $
+$VERSION = '1.76_01';
+$VERSION = eval $VERSION;
+# $Id: CPAN.pm,v 1.412 2003/07/31 14:53:04 k Exp $
 
 # only used during development:
 $Revision = "";
-# $Revision = "[".substr(q$Revision: 1.409 $, 10)."]";
+# $Revision = "[".substr(q$Revision: 1.412 $, 10)."]";
 
 use Carp ();
 use Config ();
@@ -773,16 +774,6 @@ sub has_inst {
 
 });
 	sleep 2;
-    } elsif ($mod eq "Module::Signature"){
-	# No point in complaining unless the user can reasonably install it.
-	if (eval { require Crypt::OpenPGP; 1 } or
-	    defined $CPAN::Config->{'gpg'}) {
-	    $CPAN::Frontend->myprint(qq{
-  CPAN: Module::Signature security checks disabled because Module::Signature
-  not installed.  Please consider installing the Module::Signature module.
-});
-	    sleep 2;
-	}
     } else {
 	delete $INC{$file}; # if it inc'd LWP but failed during, say, URI
     }
@@ -2197,7 +2188,7 @@ sub get_basic_credentials {
     return unless $proxy;
     if ($USER && $PASSWD) {
     } elsif (defined $CPAN::Config->{proxy_user} &&
-        defined $CPAN::Config->{proxy_pass}) {
+             defined $CPAN::Config->{proxy_pass}) {
         $USER = $CPAN::Config->{proxy_user};
         $PASSWD = $CPAN::Config->{proxy_pass};
     } else {
@@ -2221,6 +2212,21 @@ sub get_basic_credentials {
     }
     return($USER,$PASSWD);
 }
+
+# mirror(): Its purpose is to deal with proxy authentication. When we
+# call SUPER::mirror, we relly call the mirror method in
+# LWP::UserAgent. LWP::UserAgent will then call
+# $self->get_basic_credentials or some equivalent and this will be
+# $self->dispatched to our own get_basic_credentials method.
+
+# Our own get_basic_credentials sets $USER and $PASSWD, two globals.
+
+# 407 stands for HTTP_PROXY_AUTHENTICATION_REQUIRED. Which means
+# although we have gone through our get_basic_credentials, the proxy
+# server refuses to connect. This could be a case where the username or
+# password has changed in the meantime, so I'm trying once again without
+# $USER and $PASSWD to give the get_basic_credentials routine another
+# chance to set $USER and $PASSWD.
 
 sub mirror {
     my($self,$url,$aslocal) = @_;
@@ -3669,18 +3675,6 @@ sub dir_listing {
     my $lc_want =
 	File::Spec->catfile($CPAN::Config->{keep_source_where},
 			    "authors", "id", @$chksumfile);
-
-    my $fh;
-
-    # Purge and refetch old (pre-PGP) CHECKSUMS; they are a security
-    # hazard.  (Without GPG installed they are not that much better,
-    # though.)
-    $fh = FileHandle->new;
-    if (open($fh, $lc_want)) {
-	my $line = <$fh>; close $fh;
-	unlink($lc_want) unless $line =~ /PGP/;
-    }
-
     local($") = "/";
     # connect "force" argument with "index_expire".
     my $force = 0;
@@ -3703,7 +3697,7 @@ sub dir_listing {
     }
 
     # adapted from CPAN::Distribution::MD5_check_file ;
-    $fh = FileHandle->new;
+    my $fh = FileHandle->new;
     my($cksum);
     if (open $fh, $lc_file){
 	local($/);
@@ -3986,41 +3980,6 @@ sub get {
     $self->safe_chdir($builddir);
     File::Path::rmtree("tmp");
 
-    $self->safe_chdir($packagedir);
-    if ($CPAN::META->has_inst("Module::Signature")) {
-        if (-f "SIGNATURE") {
-            $self->debug("Module::Signature is installed, verifying") if $CPAN::DEBUG;
-            my $rv = Module::Signature::verify();
-            if ($rv != Module::Signature::SIGNATURE_OK() and
-                $rv != Module::Signature::SIGNATURE_MISSING()) {
-                $CPAN::Frontend->myprint(
-                                         qq{\nSignature invalid for }.
-                                         qq{distribution file. }.
-                                         qq{Please investigate.\n\n}.
-                                         $self->as_string,
-                                         $CPAN::META->instance(
-                                                               'CPAN::Author',
-                                                               $self->cpan_userid,
-                                                              )->as_string
-                                        );
-
-                my $wrap = qq{I\'d recommend removing $self->{localfile}. Its signature
-is invalid. Maybe you have configured your 'urllist' with
-a bad URL. Please check this array with 'o conf urllist', and
-retry.};
-                $CPAN::Frontend->mydie(Text::Wrap::wrap("","",$wrap));
-            }
-        } else {
-            $CPAN::Frontend->myprint(qq{Package came without SIGNATURE\n\n});
-        }
-    } else {
-	$self->debug("Module::Signature is NOT installed") if $CPAN::DEBUG;
-    }
-    $self->safe_chdir($builddir);
-    return if $CPAN::Signal;
-
-
-
     my($mpl) = File::Spec->catfile($packagedir,"Makefile.PL");
     my($mpl_exists) = -f $mpl;
     unless ($mpl_exists) {
@@ -4288,44 +4247,10 @@ sub verifyMD5 {
     $self->MD5_check_file($lc_file);
 }
 
-sub SIG_check_file {
-    my($self,$chk_file) = @_;
-    my $rv = eval { Module::Signature::_verify($chk_file) };
-
-    if ($rv == Module::Signature::SIGNATURE_OK()) {
-	$CPAN::Frontend->myprint("Signature for $chk_file ok\n");
-	return $self->{SIG_STATUS} = "OK";
-    } else {
-	$CPAN::Frontend->myprint(qq{\nSignature invalid for }.
-				 qq{distribution file. }.
-				 qq{Please investigate.\n\n}.
-				 $self->as_string,
-				$CPAN::META->instance(
-							'CPAN::Author',
-							$self->cpan_userid
-							)->as_string);
-
-	my $wrap = qq{I\'d recommend removing $chk_file. Its signature
-is invalid. Maybe you have configured your 'urllist' with
-a bad URL. Please check this array with 'o conf urllist', and
-retry.};
-
-	$CPAN::Frontend->mydie(Text::Wrap::wrap("","",$wrap));
-    }
-}
-
 #-> sub CPAN::Distribution::MD5_check_file ;
 sub MD5_check_file {
     my($self,$chk_file) = @_;
     my($cksum,$file,$basename);
-
-    if ($CPAN::META->has_inst("Module::Signature") and Module::Signature->VERSION >= 0.26) {
-	$self->debug("Module::Signature is installed, verifying");
-	$self->SIG_check_file($chk_file);
-    } else {
-	$self->debug("Module::Signature is NOT installed");
-    }
-
     $file = $self->{localfile};
     $basename = File::Basename::basename($file);
     my $fh = FileHandle->new;
@@ -5518,7 +5443,7 @@ sub cpan_file {
                 }
                 return "Contact Author $fullname <$email>";
             } else {
-                return "UserID $userid";
+                return "Contact Author $userid (Email address not available)";
             }
         } else {
             return "N/A";

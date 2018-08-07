@@ -29,7 +29,7 @@ package DynaLoader;
 
 use vars qw($VERSION *AUTOLOAD);
 
-$VERSION = 1.04;	# avoid typo warning
+$VERSION = '1.05';	# avoid typo warning
 
 require AutoLoader;
 *AUTOLOAD = \&AutoLoader::AUTOLOAD;
@@ -80,6 +80,7 @@ $Is_MacOS  = $^O eq 'MacOS';
 my $Mac_FS;
 $Mac_FS = eval { require Mac::FileSpec::Unixish } if $Is_MacOS;
 
+@dl_shared_objects  = ();       # shared objects for symbols we have 
 @dl_require_symbols = ();       # names of symbols we need
 @dl_resolve_using   = ();       # names of files to link with
 @dl_library_path    = ();       # path to look for files
@@ -229,6 +230,15 @@ sub bootstrap {
 	"  dynamic loading or has the $module module statically linked into it.)\n")
 	unless defined(&dl_load_file);
 
+EOT
+
+print OUT <<'EOT' if $^O eq 'os2';
+    # Can dynaload, but cannot dynaload Perl modules...
+    die 'Dynaloaded Perl modules are not available in this build of Perl' if $OS2::is_static;
+
+EOT
+
+print OUT <<'EOT';
     my @modparts = split(/::/,$module);
     my $modfname = $modparts[-1];
 
@@ -330,6 +340,9 @@ sub bootstrap {
     my $xs = dl_install_xsub("${module}::bootstrap", $boot_symbol_ref, $file);
 
     # See comment block above
+
+	push(@dl_shared_objects, $file); # record files loaded
+
     &$xs(@args);
 }
 
@@ -501,8 +514,6 @@ sub dl_find_symbol_anywhere
 
 DynaLoader - Dynamically load C libraries into Perl code
 
-dl_error(), dl_findfile(), dl_expandspec(), dl_load_file(), dl_unload_file(), dl_find_symbol(), dl_find_symbol_anywhere(), dl_undef_symbols(), dl_install_xsub(), dl_load_flags(), bootstrap() - routines used by DynaLoader modules
-
 =head1 SYNOPSIS
 
     package YourPackage;
@@ -548,6 +559,7 @@ DynaLoader Interface Summary
   $dl_debug
   @dl_librefs
   @dl_modules
+  @dl_shared_objects
                                                   Implemented in:
   bootstrap($modulename)                               Perl
   @filepaths = dl_findfile(@names)                     Perl
@@ -622,6 +634,10 @@ the loaded files.
 =item @dl_modules
 
 An array of module (package) names that have been bootstrap'ed.
+
+=item @dl_shared_objects
+
+An array of file names for the shared objects that were loaded.
 
 =item dl_error()
 

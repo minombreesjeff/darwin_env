@@ -158,13 +158,14 @@ that a metacharacter can be matched by putting a backslash before it:
     "2+2=4" =~ /2\+2/;   # matches, \+ is treated like an ordinary +
     "The interval is [0,1)." =~ /[0,1)./     # is a syntax error!
     "The interval is [0,1)." =~ /\[0,1\)\./  # matches
-    "/usr/bin/perl" =~ /\/usr\/local\/bin\/perl/;  # matches
+    "/usr/bin/perl" =~ /\/usr\/bin\/perl/;  # matches
 
 In the last regexp, the forward slash C<'/'> is also backslashed,
 because it is used to delimit the regexp.  This can lead to LTS
 (leaning toothpick syndrome), however, and it is often more readable
 to change delimiters.
 
+    "/usr/bin/perl" =~ m!/usr/bin/perl!;    # easier to read
 
 The backslash character C<'\'> is a metacharacter itself and needs to
 be backslashed:
@@ -1324,9 +1325,9 @@ If you change C<$pattern> after the first substitution happens, perl
 will ignore it.  If you don't want any substitutions at all, use the
 special delimiter C<m''>:
 
-    $pattern = 'Seuss';
+    @pattern = ('Seuss');
     while (<>) {
-        print if m'$pattern';  # matches '$pattern', not 'Seuss'
+        print if m'@pattern';  # matches literal '@pattern', not 'Seuss'
     }
 
 C<m''> acts like single quotes on a regexp; all other C<m> delimiters

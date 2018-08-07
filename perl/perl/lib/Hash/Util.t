@@ -6,7 +6,7 @@ BEGIN {
         chdir 't';
     }
 }
-use Test::More tests => 155;
+use Test::More tests => 173;
 use strict;
 
 my @Exported_Funcs;
@@ -14,6 +14,7 @@ BEGIN {
     @Exported_Funcs = qw(lock_keys   unlock_keys
                          lock_value  unlock_value
                          lock_hash   unlock_hash
+                         hash_seed
                         );
     use_ok 'Hash::Util', @Exported_Funcs;
 }
@@ -271,4 +272,54 @@ like( $@, qr/^Attempt to access disallowed key 'I_DONT_EXIST' in a restricted ha
 		 "iterating with each for $message");
     }
   }
+}
+
+# Check clear works on locked empty hashes - SEGVs on 5.8.2.
+{
+    my %hash;
+    lock_hash(%hash);
+    %hash = ();
+    ok(keys(%hash) == 0, 'clear empty lock_hash() hash');
+}
+{
+    my %hash;
+    lock_keys(%hash);
+    %hash = ();
+    ok(keys(%hash) == 0, 'clear empty lock_keys() hash');
+}
+
+my $hash_seed = hash_seed();
+ok($hash_seed >= 0, "hash_seed $hash_seed");
+
+{
+    package Minder;
+    my $counter;
+    sub DESTROY {
+	--$counter;
+    }
+    sub new {
+	++$counter;
+	bless [], __PACKAGE__;
+    }
+    package main;
+
+    for my $state ('', 'locked') {
+	my $a = Minder->new();
+	is ($counter, 1, "There is 1 object $state");
+	my %hash;
+	$hash{a} = $a;
+	is ($counter, 1, "There is still 1 object $state");
+
+	lock_keys(%hash) if $state;
+
+	is ($counter, 1, "There is still 1 object $state");
+	undef $a;
+	is ($counter, 1, "Still 1 object $state");
+	delete $hash{a};
+	is ($counter, 0, "0 objects when hash key is deleted $state");
+	$hash{a} = undef;
+	is ($counter, 0, "Still 0 objects $state");
+	%hash = ();
+	is ($counter, 0, "0 objects after clear $state");
+    }
 }

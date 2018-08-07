@@ -12,7 +12,7 @@ use Config;
 $Is_VMS = $^O eq 'VMS';
 $Is_MacOS = $^O eq 'MacOS';
 
-plan tests => 100;
+plan tests => 105;
 
 my $Perl = which_perl();
 
@@ -239,10 +239,14 @@ like( $@, qr/Bad filehandle:\s+afile/,          '       right error' );
 
 SKIP: {
     skip "This perl uses perlio", 1 if $Config{useperlio};
-    skip "This system doesn't understand EINVAL", 1 unless exists $!{EINVAL};
+    skip "miniperl cannot be relied on to load %Errno"
+	if $ENV{PERL_CORE_MINITEST};
+    # Force the reference to %! to be run time by writing ! as {"!"}
+    skip "This system doesn't understand EINVAL", 1
+	unless exists ${"!"}{EINVAL};
 
     no warnings 'io';
-    ok( !open(F,'>',\my $s) && $!{EINVAL}, 'open(reference) raises EINVAL' );
+    ok(!open(F,'>',\my $s) && ${"!"}{EINVAL}, 'open(reference) raises EINVAL');
 }
 
 {
@@ -279,3 +283,26 @@ SKIP: {
     like($@, qr/<\$fh3{...}> line 1\./, "autoviv fh lexical helem");
 }
     
+SKIP: {
+    skip("These tests use perlio", 5) unless $Config{useperlio};
+    my $w;
+    use warnings 'layer';
+    local $SIG{__WARN__} = sub { $w = shift };
+
+    eval { open(F, ">>>", "afile") };
+    like($w, qr/Invalid separator character '>' in PerlIO layer spec/,
+	 "bad open (>>>) warning");
+    like($@, qr/Unknown open\(\) mode '>>>'/,
+	 "bad open (>>>) failure");
+
+    eval { open(F, ">:u", "afile" ) };
+    like($w, qr/Unknown PerlIO layer "u"/,
+	 'bad layer ">:u" warning');
+    eval { open(F, "<:u", "afile" ) };
+    like($w, qr/Unknown PerlIO layer "u"/,
+	 'bad layer "<:u" warning');
+    eval { open(F, ":c", "afile" ) };
+    like($@, qr/Unknown open\(\) mode ':c'/,
+	 'bad layer ":c" failure');
+}
+

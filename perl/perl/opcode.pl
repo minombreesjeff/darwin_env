@@ -39,7 +39,7 @@ print <<"END";
  *    opcode.h
  *
  *    Copyright (C) 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -60,7 +60,7 @@ print ON <<"END";
 /*
  *    opnames.h
  *
- *    Copyright (C) 1999, 2000, 2001, 2002, 2003, by Larry Wall and others
+ *    Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -647,8 +647,8 @@ anonhash	anonymous hash ({})	ck_fun		ms@	L
 
 splice		splice			ck_fun		m@	A S? S? L
 push		push			ck_fun		imsT@	A L
-pop		pop			ck_shift	s%	A
-shift		shift			ck_shift	s%	A
+pop		pop			ck_shift	s%	A?
+shift		shift			ck_shift	s%	A?
 unshift		unshift			ck_fun		imsT@	A L
 sort		sort			ck_sort		m@	C? L
 reverse		reverse			ck_fun		mt@	L

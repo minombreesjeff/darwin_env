@@ -22,17 +22,17 @@ sub do_not_edit ($)
     my $years;
 
     if ($file eq 'embed.h') {
-        $years = '1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003';
+        $years = '1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004';
     } elsif ($file eq 'embedvar.h') {
-        $years = '1999, 2000, 2001, 2002, 2003';
+        $years = '1999, 2000, 2001, 2002, 2003, 2004';
     } elsif ($file eq 'global.sym') {
-        $years = '1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003';
+        $years = '1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004';
     } elsif ($file eq 'perlapi.c') {
         $years = '1999, 2000, 2001';
     } elsif ($file eq 'perlapi.h') {
-        $years = '1999, 2000, 2001, 2002, 2003';
+        $years = '1999, 2000, 2001, 2002, 2003, 2004';
     } elsif ($file eq 'proto.h') {
-        $years = '1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003';
+        $years = '1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004';
     }
 
     $years =~ s/1999,/1999,\n  / if length $years > 40;
@@ -52,6 +52,15 @@ pp.sym, intrpvar.h, perlvars.h and thrdvar.h.
 Any changes made here will be lost!
 
 Edit those files and run 'make regen_headers' to effect changes.
+
+EOW
+
+    $warning .= <<EOW if $file eq 'perlapi.c';
+
+Up to the threshold of the door there mounted a flight of twenty-seven
+broad stairs, hewn by some unknown art of the same black stone.  This
+was the only entrance to the tower.
+
 
 EOW
 

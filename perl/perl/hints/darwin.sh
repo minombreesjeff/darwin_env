@@ -13,6 +13,12 @@ perl_version=`awk '/define[ 	]+PERL_VERSION/ {print $3}' $src/patchlevel.h`
 perl_subversion=`awk '/define[ 	]+PERL_SUBVERSION/ {print $3}' $src/patchlevel.h`
 version="${perl_revision}.${perl_version}.${perl_subversion}"
 
+# Pretend that Darwin doesn't know about those system calls [perl #24122]
+d_setregid='undef'
+d_setreuid='undef'
+d_setrgid='undef'
+d_setruid='undef'
+
 # This was previously used in all but causes three cases
 # (no -Ddprefix=, -Dprefix=/usr, -Dprefix=/some/thing/else)
 # but that caused too much grief.
@@ -28,7 +34,10 @@ case "$prefix" in
 	prefix='/';
 	installprefix='/';
 	bin='/usr/bin';
-	sitebin='/usr/bin';
+	siteprefix='/usr/local';
+	# We don't want /usr/bin/HEAD issues.
+	sitebin='/usr/local/bin';
+	sitescript='/usr/local/bin';
 	installusrbinperl='define'; # You knew what you were doing.
 	privlib="/System/Library/Perl/${version}";
 	sitelib="/Library/Perl/${version}";
@@ -40,6 +49,13 @@ case "$prefix" in
 	# 4BSD uses ${prefix}/share/man, not ${prefix}/man.
 	man1dir='/usr/share/man/man1';
 	man3dir='/usr/share/man/man3';
+	# But users' installs shouldn't touch the system man pages.
+	# Transient obsoleted style.
+	siteman1='/usr/local/share/man/man1';
+	siteman3='/usr/local/share/man/man3';
+	# New style.
+	siteman1dir='/usr/local/share/man/man1';
+	siteman3dir='/usr/local/share/man/man3';
 	;;
   *)	# Anything else; use non-system directories, use Configure defaults
 	;;
@@ -75,10 +91,10 @@ esac
 
 # -pipe: makes compilation go faster.
 # -fno-common because common symbols are not allowed in MH_DYLIB
-# -DDARWIN: apparently the __APPLE__ is not sanctioned by Apple
+# -DPERL_DARWIN: apparently the __APPLE__ is not sanctioned by Apple
 # as the way to differentiate Mac OS X.  (The official line is that
 # *no* cpp symbol does differentiate Mac OS X.)
-ccflags="${ccflags} -pipe -fno-common -DDARWIN"
+ccflags="${ccflags} -pipe -fno-common -DPERL_DARWIN"
 
 # At least on Darwin 1.3.x:
 #
@@ -141,7 +157,7 @@ case "$osvers" in
 *) lddlflags="${ldflags} -bundle -undefined dynamic_lookup"
    case "$ld" in
    *MACOSX_DEVELOPMENT_TARGET*) ;;
-   *) ld="MACOSX_DEPLOYMENT_TARGET=10.3 ${ld}" ;;
+   *) ld="env MACOSX_DEPLOYMENT_TARGET=10.3 ${ld}" ;;
    esac
    ;;
 esac
@@ -167,8 +183,15 @@ EOCBU
 # vfork works
 usevfork='true';
 
-# malloc works
-usemymalloc='n';
+# malloc wrap works
+case "$usemallocwrap" in
+'') usemallocwrap='define' ;;
+esac
+
+# our malloc works (but allow users to override)
+case "$usemymalloc" in
+'') usemymalloc='n' ;;
+esac
 
 # Locales aren't feeling well.
 LC_ALL=C; export LC_ALL;
@@ -196,6 +219,11 @@ EOM
   esac
 
 esac
+
+# Fink can install a GDBM library that claims to have the ODBM interfaces
+# but Perl dynaloader cannot for some reason use that library.  We don't
+# really need ODBM_FIle, though, so let's just hint ODBM away.
+i_dbm=undef;
 
 ##
 # Build process

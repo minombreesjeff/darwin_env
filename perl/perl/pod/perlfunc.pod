@@ -473,8 +473,8 @@ When LAYER is present using binmode on text file makes sense.
 If LAYER is omitted or specified as C<:raw> the filehandle is made
 suitable for passing binary data. This includes turning off possible CRLF
 translation and marking it as bytes (as opposed to Unicode characters).
-Note that as despite what may be implied in I<"Programming Perl">
-(the Camel) or elsewhere C<:raw> is I<not> the simply inverse of C<:crlf>
+Note that, despite what may be implied in I<"Programming Perl"> (the
+Camel) or elsewhere, C<:raw> is I<not> the simply inverse of C<:crlf>
 -- other layers which would affect binary nature of the stream are
 I<also> disabled. See L<PerlIO>, L<perlrun> and the discussion about the
 PERLIO environment variable.
@@ -661,6 +661,10 @@ You can actually chomp anything that's an lvalue, including an assignment:
 If you chomp a list, each element is chomped, and the total number of
 characters removed is returned.
 
+If the C<encoding> pragma is in scope then the lengths returned are
+calculated from the length of C<$/> in Unicode characters, which is not
+always the same as the length of C<$/> in the native encoding.
+
 Note that parentheses are necessary when you're chomping anything
 that is not a simple variable.  This is because C<chomp $cwd = `pwd`;>
 is interpreted as C<(chomp $cwd) = `pwd`;>, rather than as
@@ -728,9 +732,9 @@ On POSIX systems, you can detect this condition this way:
 
 Returns the character represented by that NUMBER in the character set.
 For example, C<chr(65)> is C<"A"> in either ASCII or Unicode, and
-chr(0x263a) is a Unicode smiley face.  Note that characters from 127
-to 255 (inclusive) are by default not encoded in Unicode for backward
-compatibility reasons (but see L<encoding>).
+chr(0x263a) is a Unicode smiley face.  Note that characters from 128
+to 255 (inclusive) are by default not encoded in UTF-8 Unicode for
+backward compatibility reasons (but see L<encoding>).
 
 If NUMBER is omitted, uses C<$_>.
 
@@ -766,10 +770,10 @@ another C<open> on it, because C<open> will close it for you.  (See
 C<open>.)  However, an explicit C<close> on an input file resets the line
 counter (C<$.>), while the implicit close done by C<open> does not.
 
-If the file handle came from a piped open C<close> will additionally
-return false if one of the other system calls involved fails or if the
+If the file handle came from a piped open, C<close> will additionally
+return false if one of the other system calls involved fails, or if the
 program exits with non-zero status.  (If the only problem was that the
-program exited non-zero C<$!> will be set to C<0>.)  Closing a pipe
+program exited non-zero, C<$!> will be set to C<0>.)  Closing a pipe
 also waits for the process executing on the pipe to complete, in case you
 want to look at the output of the pipe afterwards, and
 implicitly puts the exit status value of that command into C<$?>.
@@ -1033,8 +1037,18 @@ In the case of an array, if the array elements happen to be at the end,
 the size of the array will shrink to the highest element that tests
 true for exists() (or 0 if no such element exists).
 
-Returns each element so deleted or the undefined value if there was no such
-element.  Deleting from C<$ENV{}> modifies the environment.  Deleting from
+Returns a list with the same number of elements as the number of elements
+for which deletion was attempted.  Each element of that list consists of
+either the value of the element deleted, or the undefined value.  In scalar
+context, this means that you get the value of the last element deleted (or
+the undefined value if that element did not exist).
+
+    %hash = (foo => 11, bar => 22, baz => 33);
+    $scalar = delete $hash{foo};             # $scalar is 11
+    $scalar = delete @hash{qw(foo bar)};     # $scalar is 22
+    @array  = delete @hash{qw(foo bar baz)}; # @array  is (undef,undef,33)
+
+Deleting from C<%ENV> modifies the environment.  Deleting from
 a hash tied to a DBM file deletes the entry from the DBM file.  Deleting
 from a C<tie>d hash or array may not necessarily return anything.
 
@@ -1647,7 +1661,7 @@ For example:
     fcntl($filehandle, F_GETFL, $packed_return_buffer)
 	or die "can't fcntl F_GETFL: $!";
 
-You don't have to check for C<defined> on the return from C<fnctl>.
+You don't have to check for C<defined> on the return from C<fcntl>.
 Like C<ioctl>, it maps a C<0> return from the system call into
 C<"0 but true"> in Perl.  This string is true in boolean context and C<0>
 in numeric context.  It is also exempt from the normal B<-w> warnings
@@ -1656,6 +1670,18 @@ on improper numeric conversions.
 Note that C<fcntl> will produce a fatal error if used on a machine that
 doesn't implement fcntl(2).  See the Fcntl module or your fcntl(2)
 manpage to learn what functions are available on your system.
+
+Here's an example of setting a filehandle named C<REMOTE> to be
+non-blocking at the system level.  You'll have to negotiate C<$|>
+on your own, though.
+
+    use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
+
+    $flags = fcntl(REMOTE, F_GETFL, 0)
+                or die "Can't get flags for the socket: $!\n";
+
+    $flags = fcntl(REMOTE, F_SETFL, $flags | O_NONBLOCK)
+                or die "Can't set flags for the socket: $!\n";
 
 =item fileno FILEHANDLE
 
@@ -2122,22 +2148,13 @@ In scalar context, C<gmtime()> returns the ctime(3) value:
 
     $now_string = gmtime;  # e.g., "Thu Oct 13 04:54:34 1994"
 
-Also see the C<timegm> function provided by the C<Time::Local> module,
-and the strftime(3) function available via the POSIX module.
+If you need local time instead of GMT use the L</localtime> builtin. 
+See also the C<timegm> function provided by the C<Time::Local> module,
+and the strftime(3) and mktime(3) functions available via the L<POSIX> module.
 
-This scalar value is B<not> locale dependent (see L<perllocale>), but
-is instead a Perl builtin.  Also see the C<Time::Local> module, and the
-strftime(3) and mktime(3) functions available via the POSIX module.  To
-get somewhat similar but locale dependent date strings, set up your
-locale environment variables appropriately (please see L<perllocale>)
-and try for example:
-
-    use POSIX qw(strftime);
-    $now_string = strftime "%a %b %e %H:%M:%S %Y", gmtime;
-
-Note that the C<%a> and C<%b> escapes, which represent the short forms
-of the day of the week and the month of the year, may not necessarily
-be three characters wide in all locales.
+This scalar value is B<not> locale dependent (see L<perllocale>), but is
+instead a Perl builtin.  To get somewhat similar but locale dependent date
+strings, see the example in L</localtime>.
 
 =item goto LABEL
 
@@ -2289,20 +2306,8 @@ system:
     $retval = ioctl(...) || -1;
     printf "System returned %d\n", $retval;
 
-The special string "C<0> but true" is exempt from B<-w> complaints
+The special string C<"0 but true"> is exempt from B<-w> complaints
 about improper numeric conversions.
-
-Here's an example of setting a filehandle named C<REMOTE> to be
-non-blocking at the system level.  You'll have to negotiate C<$|>
-on your own, though.
-
-    use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
-
-    $flags = fcntl(REMOTE, F_GETFL, 0)
-                or die "Can't get flags for the socket: $!\n";
-
-    $flags = fcntl(REMOTE, F_SETFL, $flags | O_NONBLOCK)
-                or die "Can't set flags for the socket: $!\n";
 
 =item join EXPR,LIST
 
@@ -2328,7 +2333,8 @@ Perl for security reasons (see L<perlsec/"Algorithmic Complexity
 Attacks">).
 
 As a side effect, calling keys() resets the HASH's internal iterator,
-see L</each>.
+see L</each>. (In particular, calling keys() in void context resets
+the iterator with no other overhead.)
 
 Here is yet another way to print your environment:
 
@@ -2381,7 +2387,7 @@ same as the number actually killed).
     kill 9, @goners;
 
 If SIGNAL is zero, no signal is sent to the process.  This is a
-useful way to check that the process is alive and hasn't changed
+useful way to check that a child process is alive and hasn't changed
 its UID.  See L<perlport> for notes on the portability of this
 construct.
 
@@ -2389,7 +2395,9 @@ Unlike in the shell, if SIGNAL is negative, it kills
 process groups instead of processes.  (On System V, a negative I<PROCESS>
 number will also kill process groups, but that's not portable.)  That
 means you usually want to use positive not negative signals.  You may also
-use a signal name in quotes.  See L<perlipc/"Signals"> for details.
+use a signal name in quotes.
+
+See L<perlipc/"Signals"> for more details.
 
 =item last LABEL
 
@@ -2513,17 +2521,20 @@ In scalar context, C<localtime()> returns the ctime(3) value:
 
     $now_string = localtime;  # e.g., "Thu Oct 13 04:54:34 1994"
 
-This scalar value is B<not> locale dependent, see L<perllocale>, but
-instead a Perl builtin.  Also see the C<Time::Local> module
-(to convert the second, minutes, hours, ... back to seconds since the
-stroke of midnight the 1st of January 1970, the value returned by
-time()), and the strftime(3) and mktime(3) functions available via the
-POSIX module.  To get somewhat similar but locale dependent date
-strings, set up your locale environment variables appropriately
-(please see L<perllocale>) and try for example:
+This scalar value is B<not> locale dependent but is a Perl builtin. For GMT
+instead of local time use the L</gmtime> builtin. See also the
+C<Time::Local> module (to convert the second, minutes, hours, ... back to
+the integer value returned by time()), and the L<POSIX> module's strftime(3)
+and mktime(3) functions.
+
+To get somewhat similar but locale dependent date strings, set up your
+locale environment variables appropriately (please see L<perllocale>) and
+try for example:
 
     use POSIX qw(strftime);
     $now_string = strftime "%a %b %e %H:%M:%S %Y", localtime;
+    # or for GMT formatted appropriately for your locale:
+    $now_string = strftime "%a %b %e %H:%M:%S %Y", gmtime;
 
 Note that the C<%a> and C<%b>, the short forms of the day of the week
 and the month of the year, may not necessarily be three characters wide.
@@ -2915,7 +2926,7 @@ Examples:
     open(ARTICLE, "caesar <$article |")		# ditto
 	or die "Can't start caesar: $!";
 
-    open(EXTRACT, "|sort >/tmp/Tmp$$")		# $$ is our process id
+    open(EXTRACT, "|sort >Tmp$$")		# $$ is our process id
 	or die "Can't start sort: $!";
 
     # in memory files
@@ -2948,14 +2959,14 @@ Examples:
     }
 
 You may also, in the Bourne shell tradition, specify an EXPR beginning
-with C<< '>&' >>, in which case the rest of the string is interpreted as the
-name of a filehandle (or file descriptor, if numeric) to be
-duped and opened.  You may use C<&> after C<< > >>, C<<< >> >>>,
-C<< < >>, C<< +> >>, C<<< +>> >>>, and C<< +< >>.  The
-mode you specify should match the mode of the original filehandle.
-(Duping a filehandle does not take into account any existing contents of
-IO buffers.) If you use the 3 arg form then you can pass either a number,
-the name of a filehandle or the normal "reference to a glob".
+with C<< '>&' >>, in which case the rest of the string is interpreted
+as the name of a filehandle (or file descriptor, if numeric) to be
+duped (as L<dup(2)>) and opened.  You may use C<&> after C<< > >>,
+C<<< >> >>>, C<< < >>, C<< +> >>, C<<< +>> >>>, and C<< +< >>.
+The mode you specify should match the mode of the original filehandle.
+(Duping a filehandle does not take into account any existing contents
+of IO buffers.) If you use the 3 arg form then you can pass either a
+number, the name of a filehandle or the normal "reference to a glob".
 
 Here is a script that saves, redirects, and restores C<STDOUT> and
 C<STDERR> using various methods:
@@ -2973,29 +2984,46 @@ C<STDERR> using various methods:
     print STDOUT "stdout 1\n";	# this works for
     print STDERR "stderr 1\n"; 	# subprocesses too
 
-    close STDOUT;
-    close STDERR;
-
     open STDOUT, ">&", $oldout or die "Can't dup \$oldout: $!";
     open STDERR, ">&OLDERR"    or die "Can't dup OLDERR: $!";
 
     print STDOUT "stdout 2\n";
     print STDERR "stderr 2\n";
 
-If you specify C<< '<&=N' >>, where C<N> is a number, then Perl will
-do an equivalent of C's C<fdopen> of that file descriptor; this is
-more parsimonious of file descriptors.  For example:
+If you specify C<< '<&=X' >>, where C<X> is a file descriptor number
+or a filehandle, then Perl will do an equivalent of C's C<fdopen> of
+that file descriptor (and not call L<dup(2)>); this is more
+parsimonious of file descriptors.  For example:
 
+    # open for input, reusing the fileno of $fd
     open(FILEHANDLE, "<&=$fd")
 
 or
 
     open(FILEHANDLE, "<&=", $fd)
 
-Note that if Perl is using the standard C libraries' fdopen() then on
-many UNIX systems, fdopen() is known to fail when file descriptors
-exceed a certain value, typically 255. If you need more file
-descriptors than that, consider rebuilding Perl to use the C<PerlIO>.
+or
+
+    # open for append, using the fileno of OLDFH
+    open(FH, ">>&=", OLDFH)
+
+or
+
+    open(FH, ">>&=OLDFH")
+
+Being parsimonious on filehandles is also useful (besides being
+parsimonious) for example when something is dependent on file
+descriptors, like for example locking using flock().  If you do just
+C<< open(A, '>>&B') >>, the filehandle A will not have the same file
+descriptor as B, and therefore flock(A) will not flock(B), and vice
+versa.  But with C<< open(A, '>>&=B') >> the filehandles will share
+the same file descriptor.
+
+Note that if you are using Perls older than 5.8.0, Perl will be using
+the standard C libraries' fdopen() to implement the "=" functionality.
+On many UNIX systems fdopen() fails when file descriptors exceed a
+certain value, typically 255.  For Perls 5.8.0 and later, PerlIO is
+most often the default.
 
 You can see whether Perl has been compiled with PerlIO or not by
 running C<perl -V> and looking for C<useperlio=> line.  If C<useperlio>
@@ -3205,6 +3233,11 @@ Multi-interpreter environments can come to being either through the
 fork() emulation on Windows platforms, or by embedding perl in a
 multi-threaded application.  The C<unique> attribute does nothing in
 all other environments.
+
+Warning: the current implementation of this attribute operates on the
+typeglob associated with the variable; this means that C<our $x : unique>
+also has the effect of C<our @x : unique; our %x : unique>. This may be
+subject to change.
 
 =item pack TEMPLATE,LIST
 
@@ -3514,12 +3547,13 @@ equal $foo).
 
 =item *
 
-If the pattern begins with a C<U>, the resulting string will be treated
-as Unicode-encoded. You can force UTF8 encoding on in a string with an
-initial C<U0>, and the bytes that follow will be interpreted as Unicode
-characters. If you don't want this to happen, you can begin your pattern
-with C<C0> (or anything else) to force Perl not to UTF8 encode your
-string, and then follow this with a C<U*> somewhere in your pattern.
+If the pattern begins with a C<U>, the resulting string will be
+treated as UTF-8-encoded Unicode. You can force UTF-8 encoding on in a
+string with an initial C<U0>, and the bytes that follow will be
+interpreted as Unicode characters. If you don't want this to happen,
+you can begin your pattern with C<C0> (or anything else) to force Perl
+not to UTF-8 encode your string, and then follow this with a C<U*>
+somewhere in your pattern.
 
 =item *
 
@@ -3967,7 +4001,8 @@ C<redo> work.
 
 =item ref
 
-Returns a true value if EXPR is a reference, false otherwise.  If EXPR
+Returns a non-empty string if EXPR is a reference, the empty
+string otherwise. If EXPR
 is not specified, C<$_> will be used.  The value returned depends on the
 type of thing the reference is a reference to.
 Builtin types include:
@@ -4033,32 +4068,42 @@ version should be used instead.
 
 Otherwise, demands that a library file be included if it hasn't already
 been included.  The file is included via the do-FILE mechanism, which is
-essentially just a variety of C<eval>.  Has semantics similar to the following
-subroutine:
+essentially just a variety of C<eval>.  Has semantics similar to the
+following subroutine:
 
     sub require {
-	my($filename) = @_;
-	return 1 if $INC{$filename};
-	my($realfilename,$result);
-	ITER: {
-	    foreach $prefix (@INC) {
-		$realfilename = "$prefix/$filename";
-		if (-f $realfilename) {
-		    $INC{$filename} = $realfilename;
-		    $result = do $realfilename;
-		    last ITER;
-		}
-	    }
-	    die "Can't find $filename in \@INC";
-	}
-	delete $INC{$filename} if $@ || !$result;
-	die $@ if $@;
-	die "$filename did not return true value" unless $result;
-	return $result;
+       my ($filename) = @_;
+       if (exists $INC{$filename}) {
+           return 1 if $INC{$filename};
+           die "Compilation failed in require";
+       }
+       my ($realfilename,$result);
+       ITER: {
+           foreach $prefix (@INC) {
+               $realfilename = "$prefix/$filename";
+               if (-f $realfilename) {
+                   $INC{$filename} = $realfilename;
+                   $result = do $realfilename;
+                   last ITER;
+               }
+           }
+           die "Can't find $filename in \@INC";
+       }
+       if ($@) {
+           $INC{$filename} = undef;
+           die $@;
+       } elsif (!$result) {
+           delete $INC{$filename};
+           die "$filename did not return true value";
+       } else {
+           return $result;
+       }
     }
 
 Note that the file will not be included twice under the same specified
-name.  The file must return true as the last statement to indicate
+name.
+
+The file must return true as the last statement to indicate
 successful execution of any initialization code, so it's customary to
 end such a file with C<1;> unless you're sure it'll return true
 otherwise.  But it's better just to put the C<1;>, in case you add more
@@ -4202,6 +4247,8 @@ in the opposite order.
 
     undef $/;			# for efficiency of <>
     print scalar reverse <>;	# character tac, last line tsrif
+
+Used without arguments in scalar context, reverse() reverses C<$_>.
 
 This operator is also handy for inverting a hash, although there are some
 caveats.  If a value is duplicated in the original hash, only one of those
@@ -4824,8 +4871,9 @@ Example, assuming array lengths are passed before arrays:
 
 =item split
 
-Splits a string into a list of strings and returns that list.  By default,
-empty leading fields are preserved, and empty trailing ones are deleted.
+Splits the string EXPR into a list of strings and returns that list.  By
+default, empty leading fields are preserved, and empty trailing ones are
+deleted.
 
 In scalar context, returns the number of fields found and splits into
 the C<@_> array.  Use of split in scalar context is deprecated, however,
@@ -5285,7 +5333,7 @@ as follows:
            = stat($filename);
 
 Not all fields are supported on all filesystem types.  Here are the
-meaning of the fields:
+meanings of the fields:
 
   0 dev      device number of filesystem
   1 ino      inode number
@@ -5303,13 +5351,13 @@ meaning of the fields:
 
 (The epoch was at 00:00 January 1, 1970 GMT.)
 
-(*) The ctime field is non-portable, in particular you cannot expect
+(*) The ctime field is non-portable.  In particular, you cannot expect
 it to be a "creation time", see L<perlport/"Files and Filesystems">
 for details.
 
-If stat is passed the special filehandle consisting of an underline, no
+If C<stat> is passed the special filehandle consisting of an underline, no
 stat is done, but the current contents of the stat structure from the
-last stat or filetest are returned.  Example:
+last C<stat>, C<lstat>, or filetest are returned.  Example:
 
     if (-x $file && (($d) = stat(_)) && $d < 0) {
 	print "$file is executable NFS file\n";
@@ -5354,7 +5402,7 @@ You can import symbolic mode constants (C<S_IF*>) and functions
     $is_setgid     =  S_ISDIR($mode);
 
 You could write the last two using the C<-u> and C<-d> operators.
-The commonly available S_IF* constants are
+The commonly available C<S_IF*> constants are
 
     # Permissions: read, write, execute, for user, group, others.
 
@@ -5375,7 +5423,7 @@ The commonly available S_IF* constants are
 
     S_IREAD S_IWRITE S_IEXEC
 
-and the S_IF* functions are
+and the C<S_IF*> functions are
 
     S_IMODE($mode)	the part of $mode containing the permission bits
 			and the setuid/setgid/sticky bits
@@ -5384,7 +5432,7 @@ and the S_IF* functions are
 			which can be bit-anded with e.g. S_IFREG
                         or with the following functions
 
-    # The operators -f, -d, -l, -b, -c, -p, and -s.
+    # The operators -f, -d, -l, -b, -c, -p, and -S.
 
     S_ISREG($mode) S_ISDIR($mode) S_ISLNK($mode)
     S_ISBLK($mode) S_ISCHR($mode) S_ISFIFO($mode) S_ISSOCK($mode)
@@ -5396,10 +5444,8 @@ and the S_IF* functions are
     S_ISENFMT($mode) S_ISWHT($mode)
 
 See your native chmod(2) and stat(2) documentation for more details
-about the S_* constants.
-
-To get status info for a symbolic link instead of the target file
-behind the link, use the C<lstat> function, see L</stat>.
+about the C<S_*> constants.  To get status info for a symbolic link
+instead of the target file behind the link, use the C<lstat> function.
 
 =item study SCALAR
 
@@ -5533,7 +5579,7 @@ use eval:
 
     $symlink_exists = eval { symlink("",""); 1 };
 
-=item syscall LIST
+=item syscall NUMBER, LIST
 
 Calls the system call specified as the first element of the list,
 passing the remaining elements as arguments to the system call.  If
@@ -5674,7 +5720,7 @@ and C<SEEK_END> (start of the file, current position, end of the file)
 from the Fcntl module.  Use of the constants is also more portable
 than relying on 0, 1, and 2.  For example to define a "systell" function:
 
-	use Fnctl 'SEEK_CUR';
+	use Fcntl 'SEEK_CUR';
 	sub systell { sysseek($_[0], 0, SEEK_CUR) }
 
 Returns the new position, or the undefined value on failure.  A position
@@ -5716,9 +5762,10 @@ indicates a failure to start the program (inspect $! for the reason).
 Like C<exec>, C<system> allows you to lie to a program about its name if
 you use the C<system PROGRAM LIST> syntax.  Again, see L</exec>.
 
-Because C<system> and backticks block C<SIGINT> and C<SIGQUIT>,
-killing the program they're running doesn't actually interrupt
-your program.
+Since C<SIGINT> and C<SIGQUIT> are ignored during the execution of
+C<system>, if you expect your program to terminate on receipt of these
+signals you will need to arrange to do so yourself based on the return
+value.
 
     @args = ("command", "arg1", "arg2");
     system(@args) == 0
@@ -5727,9 +5774,16 @@ your program.
 You can check all the failure possibilities by inspecting
 C<$?> like this:
 
-    $exit_value  = $? >> 8;
-    $signal_num  = $? & 127;
-    $dumped_core = $? & 128;
+    if ($? == -1) {
+	print "failed to execute: $!\n";
+    }
+    elsif ($? & 127) {
+	printf "child died with signal %d, %s coredump\n",
+	    ($? & 127),  ($? & 128) ? 'with' : 'without';
+    }
+    else {
+	printf "child exited with value %d\n", $? >> 8;
+    }
 
 or more portably by using the W*() calls of the POSIX extension;
 see L<perlport> for more information.
@@ -5833,6 +5887,7 @@ A class implementing a hash should have the following methods:
     EXISTS this, key
     FIRSTKEY this
     NEXTKEY this, lastkey
+    SCALAR this
     DESTROY this
     UNTIE this
 
@@ -6218,12 +6273,8 @@ to the current time.  For example, this code has the same effect as the
 Unix touch(1) command when the files I<already exist>.
 
     #!/usr/bin/perl
-    $now = time;
-    utime $now, $now, @ARGV;
-
-B<Note:>  Under NFS, touch(1) uses the time of the NFS server, not
-the time of the local machine.  If there is a time synchronization
-problem, the NFS server and local machine will have different times.
+    $atime = $mtime = time;
+    utime $atime, $mtime, @ARGV;
 
 Since perl 5.7.2, if the first two elements of the list are C<undef>, then
 the utime(2) function in the C library will be called with a null second
@@ -6232,6 +6283,17 @@ modification times to the current time (i.e. equivalent to the example
 above.)
 
     utime undef, undef, @ARGV;
+
+Under NFS this will use the time of the NFS server, not the time of
+the local machine.  If there is a time synchronization problem, the
+NFS server and local machine will have different times.  The Unix
+touch(1) command will in fact normally use this form instead of the
+one shown in the first example.
+
+Note that only passing one of the first two elements as C<undef> will
+be equivalent of passing it as 0 and will not have the same effect as
+described when they are both C<undef>.  This case will also trigger an
+uninitialized warning.
 
 =item values HASH
 
@@ -6246,7 +6308,8 @@ function would produce on the same (unmodified) hash.  Since Perl
 for security reasons (see L<perlsec/"Algorithmic Complexity Attacks">).
 
 As a side effect, calling values() resets the HASH's internal iterator,
-see L</each>.
+see L</each>. (In particular, calling values() in void context resets
+the iterator with no other overhead.)
 
 Note that the values are not copied, which means modifying them will
 modify the contents of the hash:
@@ -6290,10 +6353,10 @@ extend the string with sufficiently many zero bytes.   It is an error
 to try to write off the beginning of the string (i.e. negative OFFSET).
 
 The string should not contain any character with the value > 255 (which
-can only happen if you're using UTF8 encoding).  If it does, it will be
-treated as something which is not UTF8 encoded.  When the C<vec> was
+can only happen if you're using UTF-8 encoding).  If it does, it will be
+treated as something which is not UTF-8 encoded.  When the C<vec> was
 assigned to, other parts of your program will also no longer consider the
-string to be UTF8 encoded.  In other words, if you do have such characters
+string to be UTF-8 encoded.  In other words, if you do have such characters
 in your string, vec() will operate on the actual byte string, and not the
 conceptual character string.
 
@@ -6530,10 +6593,10 @@ and for other examples.
 
 =item wantarray
 
-Returns true if the context of the currently executing subroutine is
-looking for a list value.  Returns false if the context is looking
-for a scalar.  Returns the undefined value if the context is looking
-for no value (void context).
+Returns true if the context of the currently executing subroutine or
+eval() block is looking for a list value.  Returns false if the context is
+looking for a scalar.  Returns the undefined value if the context is
+looking for no value (void context).
 
     return unless defined wantarray;	# don't bother doing more
     my @a = complex_calculation();

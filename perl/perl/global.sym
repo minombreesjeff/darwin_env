@@ -2,7 +2,7 @@
 #    global.sym
 #
 #    Copyright (C) 1994, 1995, 1996, 1997, 1998, 1999,
-#    2000, 2001, 2002, 2003, by Larry Wall and others
+#    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
 #
 #    You may distribute under the terms of either the GNU General Public
 #    License or the Artistic License, as specified in the README file.
@@ -212,6 +212,7 @@ Perl_is_uni_punct_lc
 Perl_is_uni_xdigit_lc
 Perl_is_utf8_char
 Perl_is_utf8_string
+Perl_is_utf8_string_loc
 Perl_is_utf8_alnum
 Perl_is_utf8_alnumc
 Perl_is_utf8_idfirst
@@ -631,6 +632,8 @@ Perl_sv_nosharing
 Perl_sv_nolocking
 Perl_sv_nounlocking
 Perl_nothreadhook
+Perl_Slab_Alloc
+Perl_Slab_Free
 Perl_sv_setsv_flags
 Perl_sv_catpvn_flags
 Perl_sv_catsv_flags
@@ -662,3 +665,5 @@ Perl_PerlIO_get_cnt
 Perl_PerlIO_stdin
 Perl_PerlIO_stdout
 Perl_PerlIO_stderr
+Perl_hv_clear_placeholders
+Perl_hv_scalar

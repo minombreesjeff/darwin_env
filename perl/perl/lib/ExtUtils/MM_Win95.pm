@@ -1,14 +1,14 @@
 package ExtUtils::MM_Win95;
 
 use vars qw($VERSION @ISA);
-$VERSION = 0.03;
+$VERSION = 0.03_01;
 
 require ExtUtils::MM_Win32;
 @ISA = qw(ExtUtils::MM_Win32);
 
 use Config;
-my $DMAKE = 1 if $Config{'make'} =~ /^dmake/i;
-my $NMAKE = 1 if $Config{'make'} =~ /^nmake/i;
+my $DMAKE = $Config{'make'} =~ /^dmake/i;
+my $NMAKE = $Config{'make'} =~ /^nmake/i;
 
 
 =head1 NAME
@@ -125,6 +125,8 @@ The && problem.
 sub xs_o {
     my($self) = shift;
     return '' unless $self->needs_linking();
+    # Having to choose between .xs -> .c -> .o and .xs -> .o confuses dmake.
+    return '' if $DMAKE;
     '
 .xs$(OBJ_EXT):
 	$(PERLRUN) $(XSUBPP) $(XSPROTOARG) $(XSUBPPARGS) $*.xs > $*.c
@@ -189,19 +191,6 @@ RCLEAN
     }
 
     return $rclean;
-}
-
-
-=item max_exec_len
-
-Setting to 2500, a value obtained by experimentation.
-
-=cut
-
-sub max_exec_len {
-    my $self = shift;
-
-    return $self->{_MAX_EXEC_LEN} ||= 2500;
 }
 
 

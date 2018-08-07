@@ -11,8 +11,8 @@ Fcntl - load the C Fcntl.h defines
 
 =head1 DESCRIPTION
 
-This module is just a translation of the C F<fnctl.h> file.
-Unlike the old mechanism of requiring a translated F<fnctl.ph>
+This module is just a translation of the C F<fcntl.h> file.
+Unlike the old mechanism of requiring a translated F<fcntl.ph>
 file, this uses the B<h2xs> program (see the Perl source distribution)
 and your native C compiler.  This means that it has a 
 far more likely chance of getting the numbers right.
@@ -60,7 +60,7 @@ our($VERSION, @ISA, @EXPORT, @EXPORT_OK, %EXPORT_TAGS, $AUTOLOAD);
 require Exporter;
 use XSLoader ();
 @ISA = qw(Exporter);
-$VERSION = "1.04";
+$VERSION = "1.05";
 # Items to export into callers namespace by default
 # (move infrequently used names to @EXPORT_OK below)
 @EXPORT =

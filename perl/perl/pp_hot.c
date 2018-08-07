@@ -1,7 +1,7 @@
 /*    pp_hot.c
  *
  *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -141,17 +141,17 @@ PP(pp_concat)
     bool lbyte;
     STRLEN rlen;
     char* rpv = SvPV(right, rlen);	/* mg_get(right) happens here */
-    bool rbyte = !SvUTF8(right), rcopied = FALSE;
+    bool rbyte = !DO_UTF8(right), rcopied = FALSE;
 
     if (TARG == right && right != left) {
 	right = sv_2mortal(newSVpvn(rpv, rlen));
-	rpv = SvPV(right, rlen);	/* no point setting UTF8 here */
+	rpv = SvPV(right, rlen);	/* no point setting UTF-8 here */
 	rcopied = TRUE;
     }
 
     if (TARG != left) {
 	lpv = SvPV(left, llen);		/* mg_get(left) may happen here */
-	lbyte = !SvUTF8(left);
+	lbyte = !DO_UTF8(left);
 	sv_setpvn(TARG, lpv, llen);
 	if (!lbyte)
 	    SvUTF8_on(TARG);
@@ -164,7 +164,9 @@ PP(pp_concat)
 	if (!SvOK(TARG))
 	    sv_setpv(left, "");
 	lpv = SvPV_nomg(left, llen);
-	lbyte = !SvUTF8(left);
+	lbyte = !DO_UTF8(left);
+	if (IN_BYTES)
+	    SvUTF8_off(TARG);
     }
 
 #if defined(PERL_Y2KWARN)
@@ -489,7 +491,8 @@ PP(pp_add)
 PP(pp_aelemfast)
 {
     dSP;
-    AV *av = GvAV(cGVOP_gv);
+    AV *av = PL_op->op_flags & OPf_SPECIAL ?
+		(AV*)PAD_SV(PL_op->op_targ) : GvAV(cGVOP_gv);
     U32 lval = PL_op->op_flags & OPf_MOD;
     SV** svp = av_fetch(av, PL_op->op_private, lval);
     SV *sv = (svp ? *svp : &PL_sv_undef);
@@ -743,7 +746,10 @@ PP(pp_rv2av)
 	    U32 i;
 	    for (i=0; i < (U32)maxarg; i++) {
 		SV **svp = av_fetch(av, i, FALSE);
-		SP[i+1] = (svp) ? *svp : &PL_sv_undef;
+		/* See note in pp_helem, and bug id #27839 */
+		SP[i+1] = svp
+		    ? SvGMAGICAL(*svp) ? sv_mortalcopy(*svp) : *svp
+		    : &PL_sv_undef;
 	    }
 	}
 	else {
@@ -763,6 +769,7 @@ PP(pp_rv2hv)
 {
     dSP; dTOPss;
     HV *hv;
+    I32 gimme = GIMME_V;
 
     if (SvROK(sv)) {
       wasref:
@@ -776,7 +783,7 @@ PP(pp_rv2hv)
 	    RETURN;
 	}
 	else if (LVRET) {
-	    if (GIMME == G_SCALAR)
+	    if (gimme != G_ARRAY)
 		Perl_croak(aTHX_ "Can't return hash to lvalue scalar context");
 	    SETs((SV*)hv);
 	    RETURN;
@@ -793,7 +800,7 @@ PP(pp_rv2hv)
 		RETURN;
 	    }
 	    else if (LVRET) {
-		if (GIMME == G_SCALAR)
+		if (gimme != G_ARRAY)
 		    Perl_croak(aTHX_ "Can't return hash to lvalue"
 			       " scalar context");
 		SETs((SV*)hv);
@@ -818,7 +825,7 @@ PP(pp_rv2hv)
 			DIE(aTHX_ PL_no_usym, "a HASH");
 		    if (ckWARN(WARN_UNINITIALIZED))
 			report_uninit();
-		    if (GIMME == G_ARRAY) {
+		    if (gimme == G_ARRAY) {
 			SP--;
 			RETURN;
 		    }
@@ -853,7 +860,7 @@ PP(pp_rv2hv)
 		RETURN;
 	    }
 	    else if (LVRET) {
-		if (GIMME == G_SCALAR)
+		if (gimme != G_ARRAY)
 		    Perl_croak(aTHX_ "Can't return hash to lvalue"
 			       " scalar context");
 		SETs((SV*)hv);
@@ -862,23 +869,20 @@ PP(pp_rv2hv)
 	}
     }
 
-    if (GIMME == G_ARRAY) { /* array wanted */
+    if (gimme == G_ARRAY) { /* array wanted */
 	*PL_stack_sp = (SV*)hv;
 	return do_kv();
     }
-    else {
+    else if (gimme == G_SCALAR) {
 	dTARGET;
+
 	if (SvTYPE(hv) == SVt_PVAV)
 	    hv = avhv_keys((AV*)hv);
-	if (HvFILL(hv))
-            Perl_sv_setpvf(aTHX_ TARG, "%"IVdf"/%"IVdf,
-			   (IV)HvFILL(hv), (IV)HvMAX(hv) + 1);
-	else
-	    sv_setiv(TARG, 0);
-	
+
+	TARG = Perl_hv_scalar(aTHX_ hv);
 	SETTARG;
-	RETURN;
     }
+    RETURN;
 }
 
 STATIC int
@@ -985,8 +989,12 @@ PP(pp_aassign)
     HV *hash;
     I32 i;
     int magic;
+    int duplicates = 0;
+    SV **firsthashrelem = 0;	/* "= 0" keeps gcc 2.95 quiet  */
+
 
     PL_delaymagic = DM_DELAY;		/* catch simultaneous items */
+    gimme = GIMME_V;
 
     /* If there's a common identifier on both sides we have to take
      * special care that assigning the identifier on the left doesn't
@@ -1053,6 +1061,7 @@ PP(pp_aassign)
 		hash = (HV*)sv;
 		magic = SvMAGICAL(hash) != 0;
 		hv_clear(hash);
+		firsthashrelem = relem;
 
 		while (relem < lastrelem) {	/* gobble up all the rest */
 		    HE *didstore;
@@ -1064,6 +1073,9 @@ PP(pp_aassign)
 		    if (*relem)
 			sv_setsv(tmpstr,*relem);	/* value */
 		    *(relem++) = tmpstr;
+		    if (gimme != G_VOID && hv_exists_ent(hash, sv, 0))
+			/* key overwrites an existing entry */
+			duplicates += 2;
 		    didstore = hv_store_ent(hash,sv,tmpstr,0);
 		    if (magic) {
 			if (SvSMAGICAL(tmpstr))
@@ -1098,10 +1110,13 @@ PP(pp_aassign)
     if (PL_delaymagic & ~DM_DELAY) {
 	if (PL_delaymagic & DM_UID) {
 #ifdef HAS_SETRESUID
-	    (void)setresuid(PL_uid,PL_euid,(Uid_t)-1);
+	    (void)setresuid((PL_delaymagic & DM_RUID) ? PL_uid  : (Uid_t)-1,
+			    (PL_delaymagic & DM_EUID) ? PL_euid : (Uid_t)-1,
+			    (Uid_t)-1);
 #else
 #  ifdef HAS_SETREUID
-	    (void)setreuid(PL_uid,PL_euid);
+	    (void)setreuid((PL_delaymagic & DM_RUID) ? PL_uid  : (Uid_t)-1,
+			   (PL_delaymagic & DM_EUID) ? PL_euid : (Uid_t)-1);
 #  else
 #    ifdef HAS_SETRUID
 	    if ((PL_delaymagic & DM_UID) == DM_RUID) {
@@ -1111,7 +1126,7 @@ PP(pp_aassign)
 #    endif /* HAS_SETRUID */
 #    ifdef HAS_SETEUID
 	    if ((PL_delaymagic & DM_UID) == DM_EUID) {
-		(void)seteuid(PL_uid);
+		(void)seteuid(PL_euid);
 		PL_delaymagic &= ~DM_EUID;
 	    }
 #    endif /* HAS_SETEUID */
@@ -1127,10 +1142,13 @@ PP(pp_aassign)
 	}
 	if (PL_delaymagic & DM_GID) {
 #ifdef HAS_SETRESGID
-	    (void)setresgid(PL_gid,PL_egid,(Gid_t)-1);
+	    (void)setresgid((PL_delaymagic & DM_RGID) ? PL_gid  : (Gid_t)-1,
+			    (PL_delaymagic & DM_EGID) ? PL_egid : (Gid_t)-1,
+			    (Gid_t)-1);
 #else
 #  ifdef HAS_SETREGID
-	    (void)setregid(PL_gid,PL_egid);
+	    (void)setregid((PL_delaymagic & DM_RGID) ? PL_gid  : (Gid_t)-1,
+			   (PL_delaymagic & DM_EGID) ? PL_egid : (Gid_t)-1);
 #  else
 #    ifdef HAS_SETRGID
 	    if ((PL_delaymagic & DM_GID) == DM_RGID) {
@@ -1140,7 +1158,7 @@ PP(pp_aassign)
 #    endif /* HAS_SETRGID */
 #    ifdef HAS_SETEGID
 	    if ((PL_delaymagic & DM_GID) == DM_EGID) {
-		(void)setegid(PL_gid);
+		(void)setegid(PL_egid);
 		PL_delaymagic &= ~DM_EGID;
 	    }
 #    endif /* HAS_SETEGID */
@@ -1158,17 +1176,26 @@ PP(pp_aassign)
     }
     PL_delaymagic = 0;
 
-    gimme = GIMME_V;
     if (gimme == G_VOID)
 	SP = firstrelem - 1;
     else if (gimme == G_SCALAR) {
 	dTARGET;
 	SP = firstrelem;
-	SETi(lastrelem - firstrelem + 1);
+	SETi(lastrelem - firstrelem + 1 - duplicates);
     }
     else {
-	if (ary || hash)
+	if (ary)
 	    SP = lastrelem;
+	else if (hash) {
+	    if (duplicates) {
+		/* Removes from the stack the entries which ended up as
+		 * duplicated keys in the hash (fix for [perl #24380]) */
+		Move(firsthashrelem + duplicates,
+			firsthashrelem, duplicates, SV**);
+		lastrelem -= duplicates;
+	    }
+	    SP = lastrelem;
+	}
 	else
 	    SP = firstrelem + (lastlelem - firstlelem);
 	lelem = firstlelem + (relem - firstrelem);
@@ -1329,10 +1356,10 @@ play_it_again:
 	    /*SUPPRESS 560*/
 	    if ((rx->startp[i] != -1) && rx->endp[i] != -1 ) {
 		len = rx->endp[i] - rx->startp[i];
+		s = rx->startp[i] + truebase;
 	        if (rx->endp[i] < 0 || rx->startp[i] < 0 ||
 		    len < 0 || len > strend - s)
 		    DIE(aTHX_ "panic: pp_match start/end pointers");
-		s = rx->startp[i] + truebase;
 		sv_setpvn(*SP, s, len);
 		if (DO_UTF8(TARG) && is_utf8_string((U8*)s, len))
 		    SvUTF8_on(*SP);
@@ -1528,7 +1555,7 @@ Perl_do_readline(pTHX)
 	    sv_unref(sv);
 	(void)SvUPGRADE(sv, SVt_PV);
 	tmplen = SvLEN(sv);	/* remember if already alloced */
-	if (!tmplen)
+	if (!tmplen && !SvREADONLY(sv))
 	    Sv_Grow(sv, 80);	/* try short-buffering it */
 	offset = 0;
 	if (type == OP_RCATLINE && SvOK(sv)) {
@@ -1559,7 +1586,9 @@ Perl_do_readline(pTHX)
     for (;;) {
 	PUTBACK;
 	if (!sv_gets(sv, fp, offset)
-	    && (type == OP_GLOB || SNARF_EOF(gimme, PL_rs, io, sv)))
+	    && (type == OP_GLOB
+		|| SNARF_EOF(gimme, PL_rs, io, sv)
+		|| PerlIO_error(fp)))
 	{
 	    PerlIO_clearerr(fp);
 	    if (IoFLAGS(io) & IOf_ARGV) {
@@ -1611,6 +1640,17 @@ Perl_do_readline(pTHX)
 		(void)POPs;		/* Unmatched wildcard?  Chuck it... */
 		continue;
 	    }
+	} else if (SvUTF8(sv)) { /* OP_READLINE, OP_RCATLINE */
+	     U8 *s = (U8*)SvPVX(sv) + offset;
+	     STRLEN len = SvCUR(sv) - offset;
+	     U8 *f;
+	     
+	     if (ckWARN(WARN_UTF8) &&
+		 !Perl_is_utf8_string_loc(aTHX_ s, len, &f))
+		  /* Emulate :encoding(utf8) warning in the same case. */
+		  Perl_warner(aTHX_ packWARN(WARN_UTF8),
+			      "utf8 \"\\x%02X\" does not map to Unicode",
+			      f < (U8*)SvEND(sv) ? *f : 0);
 	}
 	if (gimme == G_ARRAY) {
 	    if (SvLEN(sv) - SvCUR(sv) > 20) {
@@ -1819,8 +1859,8 @@ PP(pp_iter)
 	if (cx->blk_loop.iterlval) {
 	    /* string increment */
 	    register SV* cur = cx->blk_loop.iterlval;
-	    STRLEN maxlen;
-	    char *max = SvPV((SV*)av, maxlen);
+	    STRLEN maxlen = 0;
+	    char *max = SvOK((SV*)av) ? SvPV((SV*)av, maxlen) : "";
 	    if (!SvNIOK(cur) && SvCUR(cur) <= maxlen) {
 #ifndef USE_5005THREADS			  /* don't risk potential race */
 		if (SvREFCNT(*itersvp) == 1 && !SvMAGICAL(*itersvp)) {
@@ -1883,8 +1923,7 @@ PP(pp_iter)
     }
     if (sv && SvREFCNT(sv) == 0) {
 	*itersvp = Nullsv;
-	Perl_croak(aTHX_
-	    "Use of freed value in iteration (perhaps you modified the iterated array within the loop?)");
+	Perl_croak(aTHX_ "Use of freed value in iteration");
     }
 
     if (sv)
@@ -2275,6 +2314,7 @@ PP(pp_leavesub)
     SV *sv;
 
     POPBLOCK(cx,newpm);
+    cxstack_ix++; /* temporarily protect top context */
 
     TAINT_NOT;
     if (gimme == G_SCALAR) {
@@ -2313,6 +2353,7 @@ PP(pp_leavesub)
     PUTBACK;
 
     LEAVE;
+    cxstack_ix--;
     POPSUB(cx,sv);	/* Stack values are safe: release CV and @_ ... */
     PL_curpm = newpm;	/* ... and pop $1 et al */
 
@@ -2333,6 +2374,7 @@ PP(pp_leavesublv)
     SV *sv;
 
     POPBLOCK(cx,newpm);
+    cxstack_ix++; /* temporarily protect top context */
 
     TAINT_NOT;
 
@@ -2369,6 +2411,7 @@ PP(pp_leavesublv)
 	 * TEMP, so sv_2mortal is out of question. */
 	if (!CvLVALUE(cx->blk_sub.cv)) {
 	    LEAVE;
+	    cxstack_ix--;
 	    POPSUB(cx,sv);
 	    PL_curpm = newpm;
 	    LEAVESUB(sv);
@@ -2380,6 +2423,7 @@ PP(pp_leavesublv)
 	    if (MARK == SP) {
 		if (SvFLAGS(TOPs) & (SVs_TEMP | SVs_PADTMP | SVf_READONLY)) {
 		    LEAVE;
+		    cxstack_ix--;
 		    POPSUB(cx,sv);
 		    PL_curpm = newpm;
 		    LEAVESUB(sv);
@@ -2395,6 +2439,7 @@ PP(pp_leavesublv)
 	    }
 	    else {			/* Should not happen? */
 		LEAVE;
+		cxstack_ix--;
 		POPSUB(cx,sv);
 		PL_curpm = newpm;
 		LEAVESUB(sv);
@@ -2411,6 +2456,7 @@ PP(pp_leavesublv)
 		    /* Might be flattened array after $#array =  */
 		    PUTBACK;
 		    LEAVE;
+		    cxstack_ix--;
 		    POPSUB(cx,sv);
 		    PL_curpm = newpm;
 		    LEAVESUB(sv);
@@ -2465,6 +2511,7 @@ PP(pp_leavesublv)
     PUTBACK;
 
     LEAVE;
+    cxstack_ix--;
     POPSUB(cx,sv);	/* Stack values are safe: release CV and @_ ... */
     PL_curpm = newpm;	/* ... and pop $1 et al */
 
@@ -2831,9 +2878,7 @@ try_autoload:
 	 * Owing the speed considerations, we choose instead to search for
 	 * the cv using find_runcv() when calling doeval().
 	 */
-	if (CvDEPTH(cv) < 2)
-	    (void)SvREFCNT_inc(cv);
-	else {
+	if (CvDEPTH(cv) >= 2) {
 	    PERL_STACK_OVERFLOW_CHECK();
 	    pad_push(padlist, CvDEPTH(cv), 1);
 	}

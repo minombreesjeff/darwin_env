@@ -20,7 +20,7 @@ db_get_cv(pTHX_ SV *sv)
 {
 	CV *cv;
 
-	if (PERLDB_SUB_NN) {
+	if (SvIOK(sv)) {			/* if (PERLDB_SUB_NN) { */
 	    cv = INT2PTR(CV*,SvIVX(sv));
 	} else {
 	    if (SvPOK(sv)) {
@@ -318,8 +318,8 @@ prof_dump_until(pTHX_ long ix)
 static void
 set_cv_key(pTHX_ CV *cv, char *pname, char *gname)
 {
-	SvGROW(g_key_hash, sizeof(CV*) + strlen(pname) + strlen(gname) + 3);
-	sv_setpvn(g_key_hash, (char*)&cv, sizeof(CV*));
+	SvGROW(g_key_hash, sizeof(CV**) + strlen(pname) + strlen(gname) + 3);
+	sv_setpvn(g_key_hash, (char*)&cv, sizeof(CV**));
 	sv_catpv(g_key_hash, pname);
 	sv_catpv(g_key_hash, "::");
 	sv_catpv(g_key_hash, gname);

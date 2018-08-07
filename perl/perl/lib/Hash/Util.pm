@@ -7,9 +7,9 @@ use Carp;
 require Exporter;
 our @ISA        = qw(Exporter);
 our @EXPORT_OK  = qw(lock_keys unlock_keys lock_value unlock_value
-                     lock_hash unlock_hash
+                     lock_hash unlock_hash hash_seed
                     );
-our $VERSION    = 0.04;
+our $VERSION    = 0.05;
 
 =head1 NAME
 
@@ -19,7 +19,8 @@ Hash::Util - A selection of general-utility hash subroutines
 
   use Hash::Util qw(lock_keys   unlock_keys
                     lock_value  unlock_value
-                    lock_hash   unlock_hash);
+                    lock_hash   unlock_hash
+                    hash_seed);
 
   %hash = (foo => 42, bar => 23);
   lock_keys(%hash);
@@ -31,6 +32,8 @@ Hash::Util - A selection of general-utility hash subroutines
 
   lock_hash  (%hash);
   unlock_hash(%hash);
+
+  my $hashes_are_randomised = hash_seed() != 0;
 
 =head1 DESCRIPTION
 
@@ -176,6 +179,26 @@ sub unlock_hash (\%) {
 }
 
 
+=item B<hash_seed>
+
+    my $hash_seed = hash_seed();
+
+hash_seed() returns the seed number used to randomise hash ordering.
+Zero means the "traditional" random hash ordering, non-zero means the
+new even more random hash ordering introduced in Perl 5.8.1.
+
+B<Note that the hash seed is sensitive information>: by knowing it one
+can craft a denial-of-service attack against Perl code, even remotely,
+see L<perlsec/"Algorithmic Complexity Attacks"> for more information.
+B<Do not disclose the hash seed> to people who don't need to know it.
+See also L<perlrun/PERL_HASH_SEED_DEBUG>.
+
+=cut
+
+sub hash_seed () {
+    Internals::rehash_seed();
+}
+
 =back
 
 =head1 CAVEATS
@@ -194,7 +217,8 @@ Ing-Simmons and Jeffrey Friedl.
 
 =head1 SEE ALSO
 
-L<Scalar::Util>, L<List::Util>, L<Hash::Util>
+L<Scalar::Util>, L<List::Util>, L<Hash::Util>,
+and L<perlsec/"Algorithmic Complexity Attacks">.
 
 =cut
 

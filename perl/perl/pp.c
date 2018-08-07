@@ -1,7 +1,7 @@
 /*    pp.c
  *
  *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -106,12 +106,7 @@ PP(pp_padhv)
 	RETURNOP(do_kv());
     }
     else if (gimme == G_SCALAR) {
-	SV* sv = sv_newmortal();
-	if (HvFILL((HV*)TARG))
-	    Perl_sv_setpvf(aTHX_ sv, "%ld/%ld",
-		      (long)HvFILL((HV*)TARG), (long)HvMAX((HV*)TARG) + 1);
-	else
-	    sv_setiv(sv, 0);
+	SV* sv = Perl_hv_scalar(aTHX_ (HV*)TARG);
 	SETs(sv);
     }
     RETURN;
@@ -1386,12 +1381,18 @@ PP(pp_repeat)
   dSP; dATARGET; tryAMAGICbin(repeat,opASSIGN);
   {
     register IV count = POPi;
+    if (count < 0)
+	count = 0;
     if (GIMME == G_ARRAY && PL_op->op_private & OPpREPEAT_DOLIST) {
 	dMARK;
 	I32 items = SP - MARK;
 	I32 max;
+	static const char list_extend[] = "panic: list extend";
 
 	max = items * count;
+	MEM_WRAP_CHECK_1(max, SV*, list_extend);
+	if (items > 0 && max > 0 && (max < items || max < count))
+	   Perl_croak(aTHX_ list_extend);
 	MEXTEND(MARK, max);
 	if (count > 1) {
 	    while (SP > MARK) {
@@ -1444,6 +1445,7 @@ PP(pp_repeat)
 	    if (count < 1)
 		SvCUR_set(TARG, 0);
 	    else {
+	        MEM_WRAP_CHECK_1(count, len, "panic: string extend");
 		SvGROW(TARG, (count * len) + 1);
 		repeatcpy(SvPVX(TARG) + len, SvPVX(TARG), len, count - 1);
 		SvCUR(TARG) *= count;
@@ -2364,6 +2366,7 @@ PP(pp_complement)
 	register I32 anum;
 	STRLEN len;
 
+	(void)SvPV_nomg(sv,len); /* force check for uninit var */
 	SvSetSV(TARG, sv);
 	tmps = (U8*)SvPV_force(TARG, len);
 	anum = len;
@@ -2411,6 +2414,7 @@ PP(pp_complement)
 	      *result = '\0';
 	      result -= nchar;
 	      sv_setpvn(TARG, (char*)result, nchar);
+	      SvUTF8_off(TARG);
 	  }
 	  Safefree(result);
 	  SETs(TARG);
@@ -2766,28 +2770,6 @@ PP(pp_sqrt)
     }
 }
 
-/*
- * There are strange code-generation bugs caused on sparc64 by gcc-2.95.2.
- * These need to be revisited when a newer toolchain becomes available.
- */
-#if defined(__sparc64__) && defined(__GNUC__)
-#   if __GNUC__ < 2 || (__GNUC__ == 2 && __GNUC_MINOR__ < 96)
-#       undef  SPARC64_MODF_WORKAROUND
-#       define SPARC64_MODF_WORKAROUND 1
-#   endif
-#endif
-
-#if defined(SPARC64_MODF_WORKAROUND)
-static NV
-sparc64_workaround_modf(NV theVal, NV *theIntRes)
-{
-    NV res, ret;
-    ret = Perl_modf(theVal, &res);
-    *theIntRes = res;
-    return ret;
-}
-#endif
-
 PP(pp_int)
 {
     dSP; dTARGET; tryAMAGICun(int);
@@ -2811,34 +2793,14 @@ PP(pp_int)
 	      if (value < (NV)UV_MAX + 0.5) {
 		  SETu(U_V(value));
 	      } else {
-#if defined(SPARC64_MODF_WORKAROUND)
-                  (void)sparc64_workaround_modf(value, &value);
-#elif defined(HAS_MODFL_POW32_BUG)
-/* some versions of glibc split (i + d) into (i-1, d+1) for 2^32 <= i < 2^64 */
-                  NV offset = Perl_modf(value, &value);
-                  (void)Perl_modf(offset, &offset);
-                  value += offset;
-#else
-                  (void)Perl_modf(value, &value);
-#endif
-		  SETn(value);
+		  SETn(Perl_floor(value));
 	      }
 	  }
 	  else {
 	      if (value > (NV)IV_MIN - 0.5) {
 		  SETi(I_V(value));
 	      } else {
-#if defined(SPARC64_MODF_WORKAROUND)
-                  (void)sparc64_workaround_modf(-value, &value);
-#elif defined(HAS_MODFL_POW32_BUG)
-/* some versions of glibc split (i + d) into (i-1, d+1) for 2^32 <= i < 2^64 */
-                  NV offset = Perl_modf(-value, &value);
-                  (void)Perl_modf(offset, &offset);
-                  value += offset;
-#else
-		  (void)Perl_modf(-value, &value);
-#endif
-		  SETn(-value);
+		  SETn(Perl_ceil(value));
 	      }
 	  }
       }
@@ -3063,6 +3025,19 @@ PP(pp_substr)
 	if (utf8_curlen)
 	    sv_pos_u2b(sv, &pos, &rem);
 	tmps += pos;
+	/* we either return a PV or an LV. If the TARG hasn't been used
+	 * before, or is of that type, reuse it; otherwise use a mortal
+	 * instead. Note that LVs can have an extended lifetime, so also
+	 * dont reuse if refcount > 1 (bug #20933) */
+	if (SvTYPE(TARG) > SVt_NULL) {
+	    if ( (SvTYPE(TARG) == SVt_PVLV)
+		    ? (!lvalue || SvREFCNT(TARG) > 1)
+		    : lvalue)
+	    {
+		TARG = sv_newmortal();
+	    }
+	}
+
 	sv_setpvn(TARG, tmps, rem);
 #ifdef USE_LOCALE_COLLATE
 	sv_unmagic(TARG, PERL_MAGIC_collxfrm);
@@ -3099,12 +3074,12 @@ PP(pp_substr)
 		    sv_setpvn(sv,"",0);	/* avoid lexical reincarnation */
 	    }
 
-	    if (SvREFCNT(TARG) > 1)	/* don't share the TARG (#20933) */
-		TARG = sv_newmortal();
 	    if (SvTYPE(TARG) < SVt_PVLV) {
 		sv_upgrade(TARG, SVt_PVLV);
 		sv_magic(TARG, Nullsv, PERL_MAGIC_substr, Nullch, 0);
 	    }
+	    else
+		(void)SvOK_off(TARG);
 
 	    LvTYPE(TARG) = 'x';
 	    if (LvTARG(TARG) != sv) {

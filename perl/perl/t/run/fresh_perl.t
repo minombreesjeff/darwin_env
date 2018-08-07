@@ -349,7 +349,6 @@ print "you die joe!\n" unless "@x" eq 'x y z';
 ########
 /(?{"{"})/	# Check it outside of eval too
 EXPECT
-Sequence (?{...}) not terminated or not {}-balanced at - line 1, within pattern
 Sequence (?{...}) not terminated or not {}-balanced in regex; marked by <-- HERE in m/(?{ <-- HERE "{"})/ at - line 1.
 ########
 /(?{"{"}})/	# Check it outside of eval too
@@ -823,5 +822,36 @@ It's good! >A< >B<
 $_="foo";utf8::upgrade($_);/bar/i,warn$_;
 EXPECT
 foo at - line 1.
-
-
+######## glob() bug Mon, 01 Sep 2003 02:25:41 -0700 <200309010925.h819Pf0X011457@smtp3.ActiveState.com>
+-lw
+BEGIN {
+  eval 'require Fcntl';
+  if ($@) { print qq[./"TEST"\n./"TEST"\n]; exit 0 } # running minitest?
+}
+if ($^O eq 'VMS') { # VMS is not *that* kind of a glob.
+print qq[./"TEST"\n./"TEST"\n];
+} else {
+print glob(q(./"TEST"));
+use File::Glob;
+print glob(q(./"TEST"));
+}
+EXPECT
+./"TEST"
+./"TEST"
+######## glob() bug Mon, 01 Sep 2003 02:25:41 -0700 <200309010925.h819Pf0X011457@smtp3.ActiveState.com>
+-lw
+BEGIN {
+  eval 'require Fcntl';
+  if ($@) { print qq[./"TEST"\n./"TEST"\n]; exit 0 } # running minitest?
+}
+if ($^O eq 'VMS') { # VMS is not *that* kind of a glob.
+print qq[./"TEST"\n./"TEST"\n];
+} else {
+use File::Glob;
+print glob(q(./"TEST"));
+use File::Glob;
+print glob(q(./"TEST"));
+}
+EXPECT
+./"TEST"
+./"TEST"

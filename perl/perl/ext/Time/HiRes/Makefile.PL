@@ -71,19 +71,11 @@ my $nop3 = *File::Spec::catfile;
 # without changing it, and then I'd always forget to change it before a
 # release. Sorry, Edward :)
 
-sub TMPDIR {
-    my $TMPDIR =
-	(grep(defined $_ && -d $_ && -w _,
-	      ((defined $ENV{'TMPDIR'} ? $ENV{'TMPDIR'} : undef),
-	       qw(/var/tmp /usr/tmp /tmp c:/temp))))[0];
-    $TMPDIR || die "Cannot find writable temporary directory.\n";
-}
-
 sub try_compile_and_link {
     my ($c, %args) = @_;
 
     my ($ok) = 0;
-    my ($tmp) = (($^O eq 'VMS') ? "sys\$scratch:tmp$$" : TMPDIR() . '/' . "tmp$$");
+    my ($tmp) = "tmp$$";
     local(*TMPC);
 
     my $obj_ext = $Config{obj_ext} || ".o";
@@ -338,7 +330,8 @@ EOD
 	    $has_nanosleep++;
 	    $DEFINE .= ' -DTIME_HIRES_NANOSLEEP';
 	}
-    } elsif (has_x ("nanosleep (NULL, NULL)")) {
+    } elsif ($^O ne 'mpeix' && # MPE/iX falsely finds nanosleep.
+             has_x ("nanosleep (NULL, NULL)")) {
 	$has_nanosleep++;
 	$DEFINE .= ' -DTIME_HIRES_NANOSLEEP';
     }
@@ -387,7 +380,7 @@ sub doMakefile {
 	    'SUFFIX'   => 'gz',
 	},
         clean => { FILES => "xdefine" },
-        realclean => {FILES=> 'const-c.inc const-xs.inc'},
+        realclean => { FILES=> 'const-c.inc const-xs.inc' },
     );
 
     if ($ENV{PERL_CORE}) {
@@ -444,7 +437,19 @@ sub main {
     unless ($ENV{PERL_CORE}) {
 	print  <<EOM;
 Now you may issue '$make'.  Do not forget also '$make test'.
+
 EOM
+       if ($ENV{LC_ALL}   =~ /utf-?8/i ||
+           $ENV{LC_CTYPE} =~ /utf-?8/i ||
+           $ENV{LANG}     =~ /utf-?8/i) {
+            print  <<EOM;
+NOTE: if you get an error like this (the line number may vary):
+Makefile:91: *** missing separator
+then set the environment variable LC_ALL to "C" and retry
+from scratch (re-run perl "Makefile.PL").
+
+EOM
+        }
     }
 }
 

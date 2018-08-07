@@ -3,7 +3,7 @@ package PerlIO::via::QuotedPrint;
 # Set the version info
 # Make sure we do things by the book from now on
 
-$VERSION = '0.04';
+$VERSION = '0.06';
 use strict;
 
 # Make sure the encoding/decoding stuff is available
@@ -71,17 +71,24 @@ This module implements a PerlIO layer that works on files encoded in the
 quoted-printable format.  It will decode from quoted-printable while reading
 from a handle, and it will encode as quoted-printable while writing to a handle.
 
+=head1 REQUIRED MODULES
+
+ MIME::QuotedPrint (any)
+
 =head1 SEE ALSO
 
 L<PerlIO::via>, L<MIME::QuotedPrint>, L<PerlIO::via::Base64>,
 L<PerlIO::via::MD5>, L<PerlIO::via::StripHTML>, L<PerlIO::via::Rotate>.
 
+=head1 ACKNOWLEDGEMENTS
+
+Based on example that was initially added to MIME::QuotedPrint.pm for the
+5.8.0 distribution of Perl.
+
 =head1 COPYRIGHT
 
-Copyright (c) 2002 Elizabeth Mattijsen.  Based on example that was initially
-added to MIME::QuotedPrint.pm for the 5.8.0 distribution of Perl.
-
-This library is free software; you can redistribute it and/or
-modify it under the same terms as Perl itself.
+Copyright (c) 2002-2003 Elizabeth Mattijsen.  All rights reserved.  This
+library is free software; you can redistribute it and/or modify it under
+the same terms as Perl itself.
 
 =cut

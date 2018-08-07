@@ -1,7 +1,7 @@
 /*    gv.c
  *
  *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -731,7 +731,7 @@ Perl_gv_fetchpv(pTHX_ const char *nambeg, I32 add, I32 sv_type)
 
 	    if (global)
 		stash = PL_defstash;
-	    else if ((COP*)PL_curcop == &PL_compiling) {
+	    else if (IN_PERL_COMPILETIME) {
 		stash = PL_curstash;
 		if (add && (PL_hints & HINT_STRICT_VARS) &&
 		    sv_type != SVt_PVCV &&
@@ -772,12 +772,15 @@ Perl_gv_fetchpv(pTHX_ const char *nambeg, I32 add, I32 sv_type)
 
     if (!stash) {
 	if (add) {
-	    qerror(Perl_mess(aTHX_
+	    register SV *err = Perl_mess(aTHX_
 		 "Global symbol \"%s%s\" requires explicit package name",
 		 (sv_type == SVt_PV ? "$"
 		  : sv_type == SVt_PVAV ? "@"
 		  : sv_type == SVt_PVHV ? "%"
-		  : ""), name));
+		  : ""), name);
+	    if (USE_UTF8_IN_NAMES)
+		SvUTF8_on(err);
+	    qerror(err);
 	    stash = PL_nullstash;
 	}
 	else

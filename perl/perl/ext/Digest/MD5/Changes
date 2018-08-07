@@ -1,3 +1,69 @@
+2003-12-07   Gisle Aas <gisle@ActiveState.com>
+
+   Release 2.33
+   
+   Enable explicit context passing for slight performance
+   improvement in threaded perls.
+   
+   Tweaks to the Makefile.PL so that it is suitable both for
+   core and CPAN use.
+
+
+
+2003-12-05   Gisle Aas <gisle@ActiveState.com>
+
+   Release 2.32
+
+   Don't run u32align test program on HP-UX 10.20 as it
+   will hang.  Patch by H.Merijn Brand <h.m.brand@hccnet.nl>.
+
+   Fixed documentation typo.
+
+
+
+2003-11-28   Gisle Aas <gisle@ActiveState.com>
+
+   Release 2.31
+
+   Inherit add_bits() from Digest::base if available.
+
+
+
+2003-10-09   Gisle Aas <gisle@ActiveState.com>
+
+   Release 2.30
+
+   Some tweaks to make the module build on perl-5.004 and
+   perl-5.005 again.
+
+
+
+2003-10-06   Gisle Aas <gisle@ActiveState.com>
+
+   Release 2.29
+
+   Another try.  Forgot to update the test checksums.
+
+
+
+2003-10-06   Gisle Aas <gisle@ActiveState.com>
+
+   Release 2.28
+
+   Fix minor documentation typo.
+
+
+
+2003-08-04   Gisle Aas <gisle@ActiveState.com>
+
+   Release 2.27
+
+   Avoid having to figure how to compile alignment test program
+   on MS-Windows by just assume free alignment as for i386.  Source
+   builds on Windows was apparently broken.
+
+
+
 2003-07-21   Gisle Aas <gisle@ActiveState.com>
 
    Release 2.26
@@ -121,7 +187,7 @@
    Release 2.16
 
    Sync up with the bleadperl version:
-      - use SvPVbyte() if avaiable
+      - use SvPVbyte() if available
       - fixes to make the code 'gcc -Wall'-clean
 
 
@@ -130,7 +196,7 @@
 
    Release 2.15
 
-   Avoid exit() in Makefile.PL and bleedperls redefinition of printf
+   Avoid exit() in Makefile.PL and bleadperl redefinition of printf
    in the alignment test program.
    Patch by Doug MacEachern <dougm@covalent.net>.
 
@@ -147,7 +213,7 @@
    Document the missing padding for the base64 digests.
 
    If both XS bootstrap and locating Digest::Perl::MD5 fails
-   reraise the original XS bootstrap exception.
+   re-raise the original XS bootstrap exception.
 
 
 
@@ -390,7 +456,7 @@
    $md5->digest will automatically reset now.
 
    Digest::HMAC methods add() and addfile() did not return the
-   corret object.
+   correct object.
 
    Added Digest.pm loading module.  I am not sure this is a good idea.
 
@@ -533,7 +599,7 @@ amount of data passed to any single call to the underlying MD5
 routines is limited to (2^32 - 1) bytes -- that's 4 gigabytes. I'm
 sorry if that's a real problem for you ...
 
-And finally, a minor complilation warning (unsigned char * used with
+And finally, a minor compilation warning (unsigned char * used with
 function having char * prototype) has also been eliminated.
 
 *** 96/04/09 Version 1.6
@@ -555,7 +621,7 @@ examples as to how the routines might be used.
 *** 96/03/12 Version 1.5.2
 
 Minor fixes from Christopher J Madsen <madsen@computek.net> to provide
-support for building on OS/2 (and to work arround a perl -w bug).
+support for building on OS/2 (and to work around a perl -w bug).
 
 Remove warning about possible difference between add('foo', 'bar') and
 add('foobar'). This is not true (it may have been true in the earliest

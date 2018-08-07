@@ -378,6 +378,8 @@ elsif ($PLATFORM eq 'os2') {
 		    dlsym
 		    dlerror
 		    dlclose
+		    dup2
+		    dup
 		    my_tmpfile
 		    my_tmpnam
 		    my_flock
@@ -399,6 +401,10 @@ elsif ($PLATFORM eq 'os2') {
 		    nthreads_cond
 		    os2_cond_wait
 		    os2_stat
+		    os2_execname
+		    async_mssleep
+		    msCounter
+		    InfoTable
 		    pthread_join
 		    pthread_create
 		    pthread_detach
@@ -621,6 +627,12 @@ else {
 		    )];
 }
 
+if ($define{'PERL_MALLOC_WRAP'}) {
+    emit_symbols [qw(
+		    PL_memory_wrap
+		    )];
+}
+
 unless ($define{'USE_5005THREADS'} || $define{'USE_ITHREADS'}) {
     skip_symbols [qw(
 		    PL_thr_key
@@ -731,6 +743,8 @@ unless ($define{'PL_OP_SLAB_ALLOC'}) {
                      PL_OpPtr
                      PL_OpSlab
                      PL_OpSpace
+		     Perl_Slab_Alloc
+		     Perl_Slab_Free
                     )];
 }
 
@@ -1338,7 +1352,14 @@ foreach my $symbol (sort keys %export) {
 }
 
 if ($PLATFORM eq 'os2') {
-	print "; LAST_ORDINAL=$sym_ord\n";
+	print <<EOP;
+    dll_perlmain=main
+    fill_extLibpath
+    dir_subst
+    Perl_OS2_handler_install
+
+; LAST_ORDINAL=$sym_ord
+EOP
 }
 
 sub emit_symbol {

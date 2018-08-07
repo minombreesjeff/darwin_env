@@ -1,6 +1,6 @@
 /*    pad.c
  *
- *    Copyright (C) 2002, by Larry Wall and others
+ *    Copyright (C) 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -82,6 +82,12 @@ If the 'name' is '&' the corresponding entry in frame AV
 is a CV representing a possible closure.
 (SvFAKE and name of '&' is not a meaningful combination currently but could
 become so if C<my sub foo {}> is implemented.)
+
+The flag SVf_PADSTALE is cleared on lexicals each time the my() is executed,
+and set on scope exit. This allows the 'Variable $x is not available' warning
+to be generated in evals, such as 
+
+    { my $x = 1; sub f { eval '$x'} } f();
 
 =cut
 */
@@ -247,17 +253,28 @@ Perl_pad_undef(pTHX_ CV* cv)
 		CV *innercv = (CV*)curpad[ix];
 		namepad[ix] = Nullsv;
 		SvREFCNT_dec(namesv);
-		curpad[ix] = Nullsv;
-		SvREFCNT_dec(innercv);
+
+		if (SvREFCNT(comppad) < 2) { /* allow for /(?{ sub{} })/  */
+		    curpad[ix] = Nullsv;
+		    SvREFCNT_dec(innercv);
+		}
 		if (SvREFCNT(innercv) /* in use, not just a prototype */
 		    && CvOUTSIDE(innercv) == cv)
 		{
 		    assert(CvWEAKOUTSIDE(innercv));
-		    CvWEAKOUTSIDE_off(innercv);
-		    CvOUTSIDE(innercv) = outercv;
-		    CvOUTSIDE_SEQ(innercv) = seq;
-		    SvREFCNT_inc(outercv);
+		    /* don't relink to grandfather if he's being freed */
+		    if (outercv && SvREFCNT(outercv)) {
+			CvWEAKOUTSIDE_off(innercv);
+			CvOUTSIDE(innercv) = outercv;
+			CvOUTSIDE_SEQ(innercv) = seq;
+			SvREFCNT_inc(outercv);
+		    }
+		    else {
+			CvOUTSIDE(innercv) = Nullcv;
+		    }
+
 		}
+
 	    }
 	}
     }
@@ -575,11 +592,11 @@ Perl_pad_findmy(pTHX_ char *name)
 	    continue;
 	}
 	else {
-	    if (   seq >  (U32)I_32(SvNVX(sv))	/* min */
+	    if (   seq >  U_32(SvNVX(sv))	/* min */
 		&& seq <= (U32)SvIVX(sv))	/* max */
 		return off;
 	    else if ((SvFLAGS(sv) & SVpad_OUR)
-		    && (U32)I_32(SvNVX(sv)) == PAD_MAX) /* min */
+		    && U_32(SvNVX(sv)) == PAD_MAX) /* min */
 	    {
 		/* look for an our that's being introduced; this allows
 		 *    our $foo = 0 unless defined $foo;
@@ -667,8 +684,8 @@ S_pad_findlex(pTHX_ char *name, PADOFFSET newoff, CV* innercv)
 		continue;
 	    }
 	    else {
-		if (   seq >  (U32)I_32(SvNVX(sv))	/* min */
-		    && seq <= (U32)SvIVX(sv)		/* max */
+		if (   seq >  U_32(SvNVX(sv))	/* min */
+		    && seq <= (U32)SvIVX(sv)	/* max */
 		    && !(newoff && !depth) /* ignore inactive when cloning */
 		)
 		    goto found;
@@ -708,7 +725,7 @@ found:
 		"             matched:   offset %ld"
 		    " (%lu,%lu), sv=0x%"UVxf"\n",
 		(long)off,
-		(unsigned long)I_32(SvNVX(sv)),
+		(unsigned long)U_32(SvNVX(sv)),
 		(unsigned long)SvIVX(sv),
 		PTR2UV(oldsv)
 	    )
@@ -908,7 +925,7 @@ Perl_intro_my(pTHX)
 	    DEBUG_Xv(PerlIO_printf(Perl_debug_log,
 		"Pad intromy: %ld \"%s\", (%lu,%lu)\n",
 		(long)i, SvPVX(sv),
-		(unsigned long)I_32(SvNVX(sv)), (unsigned long)SvIVX(sv))
+		(unsigned long)U_32(SvNVX(sv)), (unsigned long)SvIVX(sv))
 	    );
 	}
     }
@@ -956,7 +973,7 @@ Perl_pad_leavemy(pTHX)
 	    DEBUG_Xv(PerlIO_printf(Perl_debug_log,
 		"Pad leavemy: %ld \"%s\", (%lu,%lu)\n",
 		(long)off, SvPVX(sv),
-		(unsigned long)I_32(SvNVX(sv)), (unsigned long)SvIVX(sv))
+		(unsigned long)U_32(SvNVX(sv)), (unsigned long)SvIVX(sv))
 	    );
 	}
     }
@@ -1210,7 +1227,7 @@ Perl_do_dump_pad(pTHX_ I32 level, PerlIO *file, PADLIST *padlist, int full)
 		    (int) ix,
 		    PTR2UV(ppad[ix]),
 		    (unsigned long) (ppad[ix] ? SvREFCNT(ppad[ix]) : 0),
-		    (unsigned long)I_32(SvNVX(namesv)),
+		    (unsigned long)U_32(SvNVX(namesv)),
 		    (unsigned long)SvIVX(namesv),
 		    SvPVX(namesv)
 		);

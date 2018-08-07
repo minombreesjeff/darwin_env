@@ -20,7 +20,7 @@
 
 # $Id: Head.U,v 3.0.1.9 1997/02/28 15:02:09 ram Exp $
 #
-# Generated on Thu Jul  3 17:15:17 EEST 2003 [metaconfig 3.0 PL70]
+# Generated on Wed Mar 31 15:14:15 METDST 2004 [metaconfig 3.0 PL70]
 # (with additional metaconfig patches by perlbug@perl.org)
 
 cat >c1$$ <<EOF
@@ -565,7 +565,6 @@ d_msgrcv=''
 d_msgsnd=''
 d_msync=''
 d_munmap=''
-d_nanosleep=''
 d_nice=''
 d_nl_langinfo=''
 d_off64_t=''
@@ -943,6 +942,7 @@ freetype=''
 mallocobj=''
 mallocsrc=''
 malloctype=''
+usemallocwrap=''
 usemymalloc=''
 installman1dir=''
 man1dir=''
@@ -1073,22 +1073,22 @@ sitearchexp=''
 installsitebin=''
 sitebin=''
 sitebinexp=''
-installsitehtml1=''
-sitehtml1=''
-sitehtml1exp=''
-installsitehtml3=''
-sitehtml3=''
-sitehtml3exp=''
+installsitehtml1dir=''
+sitehtml1dir=''
+sitehtml1direxp=''
+installsitehtml3dir=''
+sitehtml3dir=''
+sitehtml3direxp=''
 installsitelib=''
 sitelib=''
 sitelib_stem=''
 sitelibexp=''
-installsiteman1=''
-siteman1=''
-siteman1exp=''
-installsiteman3=''
-siteman3=''
-siteman3exp=''
+installsiteman1dir=''
+siteman1dir=''
+siteman1direxp=''
+installsiteman3dir=''
+siteman3dir=''
+siteman3direxp=''
 siteprefix=''
 siteprefixexp=''
 installsitescript=''
@@ -1147,23 +1147,23 @@ d_vendorbin=''
 installvendorbin=''
 vendorbin=''
 vendorbinexp=''
-installvendorhtml1=''
-vendorhtml1=''
-vendorhtml1exp=''
-installvendorhtml3=''
-vendorhtml3=''
-vendorhtml3exp=''
+installvendorhtml1dir=''
+vendorhtml1dir=''
+vendorhtml1direxp=''
+installvendorhtml3dir=''
+vendorhtml3dir=''
+vendorhtml3direxp=''
 d_vendorlib=''
 installvendorlib=''
 vendorlib=''
 vendorlib_stem=''
 vendorlibexp=''
-installvendorman1=''
-vendorman1=''
-vendorman1exp=''
-installvendorman3=''
-vendorman3=''
-vendorman3exp=''
+installvendorman1dir=''
+vendorman1dir=''
+vendorman1direxp=''
+installvendorman3dir=''
+vendorman3dir=''
+vendorman3direxp=''
 usevendorprefix=''
 vendorprefix=''
 vendorprefixexp=''
@@ -1174,8 +1174,6 @@ vendorscriptexp=''
 versiononly=''
 defvoidused=''
 voidflags=''
-pm_apiversion=''
-xs_apiversion=''
 yacc=''
 yaccflags=''
 CONFIG=''
@@ -1210,6 +1208,17 @@ elif test -d c:/. -o -n "$is_os2" ; then
 fi
 
 i_whoami=''
+ccname=''
+ccversion=''
+perllibs=''
+: set useposix=false in your hint file to disable the POSIX extension.
+useposix=true
+: set useopcode=false in your hint file to disable the Opcode extension.
+useopcode=true
+: Trailing extension.  Override this in a hint file, if needed.
+: Extra object files, if any, needed on this platform.
+archobjs=''
+archname=''
 : Possible local include directories to search.
 : Set locincpth to "" in a hint file to defeat local include searches.
 locincpth="/usr/local/include /opt/local/include /usr/gnu/include"
@@ -1218,12 +1227,6 @@ locincpth="$locincpth /opt/gnu/include /usr/GNU/include /opt/GNU/include"
 : no include file wanted by default
 inclwanted=''
 
-siteman1=''
-siteman3=''
-sitescript=''
-: Trailing extension.  Override this in a hint file, if needed.
-: Extra object files, if any, needed on this platform.
-archobjs=''
 groupstype=''
 libnames=''
 : change the next line if compiling for Xenix/286 on Xenix/386
@@ -1247,25 +1250,20 @@ plibpth=''
 libswanted=''
 : some systems want to use only the non-versioned libso:s
 ignore_versioned_solibs=''
-: full support for void wanted by default
-defvoidused=15
-
-ccname=''
-ccversion=''
-perllibs=''
-: set useposix=false in your hint file to disable the POSIX extension.
-useposix=true
-: set useopcode=false in your hint file to disable the Opcode extension.
-useopcode=true
+siteman1dir=''
+siteman3dir=''
+sitescript=''
 archname64=''
 ccflags_uselargefiles=''
 ldflags_uselargefiles=''
 libswanted_uselargefiles=''
 : set usemultiplicity on the Configure command line to enable multiplicity.
 : set usesocks on the Configure command line to enable socks.
-archname=''
 : set usethreads on the Configure command line to enable threads.
 usereentrant='undef'
+: full support for void wanted by default
+defvoidused=15
+
 : List of libraries we want.
 : If anyone needs extra -lxxx, put those in a hint file.
 libswanted="sfio socket bind inet nsl nm ndbm gdbm dbm db malloc dl dld ld sun"
@@ -3104,7 +3102,7 @@ EOM
 		domainos) osname=apollo
 			osvers="$3"
 			;;
-		dgux) osname=dgux 
+		dgux)	osname=dgux 
 			osvers="$3"
 			;;
 		dynixptx*) osname=dynixptx
@@ -3112,23 +3110,25 @@ EOM
 			;;
 		freebsd) osname=freebsd 
 			osvers="$3" ;;
-		genix) osname=genix ;;
-		hp*) osname=hpux 
+		genix)	osname=genix ;;
+		gnu)	osname=gnu
+			osvers="$3" ;;
+		hp*)	osname=hpux 
 			osvers=`echo "$3" | $sed 's,.*\.\([0-9]*\.[0-9]*\),\1,'`
 			;;
-		irix*) osname=irix
+		irix*)	osname=irix
 			case "$3" in
 			4*) osvers=4 ;;
 			5*) osvers=5 ;;
 			*)	osvers="$3" ;;
 			esac
 			;;
-		linux) osname=linux
+		linux)	osname=linux
 			case "$3" in
 			*)	osvers="$3" ;;
 			esac
 			;;
-		MiNT) osname=mint
+		MiNT)	osname=mint
 			;;
 		netbsd*) osname=netbsd
 			osvers="$3"
@@ -3459,12 +3459,15 @@ esac
 
 : who configured the system
 cf_time=`LC_ALL=C; LANGUAGE=C; export LC_ALL; export LANGUAGE; $date 2>&1`
-cf_by=`(logname) 2>/dev/null`
 case "$cf_by" in
 "")
-	cf_by=`(whoami) 2>/dev/null`
+	cf_by=`(logname) 2>/dev/null`
 	case "$cf_by" in
-	"") cf_by=unknown ;;
+	"")
+		cf_by=`(whoami) 2>/dev/null`
+		case "$cf_by" in
+		"") cf_by=unknown ;;
+		esac ;;
 	esac ;;
 esac
 
@@ -3674,22 +3677,22 @@ set d_oldpthreads
 eval $setvar
 
 
-case "$usethreads" in
-"$define"|true|[yY]*)
 : Look for a hint-file generated 'call-back-unit'.  If the
 : user has specified that a threading perl is to be built,
 : we may need to set or change some other defaults.
-	if $test -f usethreads.cbu; then
-		echo "Your platform has some specific hints for threaded builds, using them..."
-		. ./usethreads.cbu
-	else
+if $test -f usethreads.cbu; then
+    echo "Your platform has some specific hints regarding threaded builds, using them..."
+    . ./usethreads.cbu
+else
+    case "$usethreads" in
+	"$define"|true|[yY]*)
 		$cat <<EOM
-(Your platform doesn't have any specific hints for threaded builds.
+(Your platform does not have any specific hints for threaded builds.
  Assuming POSIX threads, then.)
 EOM
-	fi
 	;;
-esac
+    esac
+fi
 
 cat <<EOM
 
@@ -4547,21 +4550,21 @@ case "$uselongdouble" in
 true|[yY]*) uselongdouble="$define" ;;
 esac
 
-case "$uselongdouble" in
-$define)
 : Look for a hint-file generated 'call-back-unit'.  If the
 : user has specified that long doubles should be used,
 : we may need to set or change some other defaults.
-	if $test -f uselongdouble.cbu; then
-		echo "Your platform has some specific hints for long doubles, using them..."
-		. ./uselongdouble.cbu
-	else
+if $test -f uselongdouble.cbu; then
+    echo "Your platform has some specific hints regarding long doubles, using them..."
+    . ./uselongdouble.cbu
+else
+    case "$uselongdouble" in
+	$define)
 		$cat <<EOM
-(Your platform doesn't have any specific hints for long doubles.)
+(Your platform does not have any specific hints for long doubles.)
 EOM
-	fi
 	;;
-esac
+    esac
+fi
 
 : Looking for optional libraries
 echo " "
@@ -5448,15 +5451,15 @@ EOM
 	;;
 esac
 
-case "$use64bitint" in
-"$define"|true|[yY]*)
 : Look for a hint-file generated 'call-back-unit'.  If the
 : user has specified that a 64-bit perl is to be built,
 : we may need to set or change some other defaults.
-	if $test -f use64bitint.cbu; then
-		echo "Your platform has some specific hints for 64-bit integers, using them..."
-		. ./use64bitint.cbu
-	fi
+if $test -f use64bitint.cbu; then
+	echo "Your platform has some specific hints regarding 64-bit integers, using them..."
+	. ./use64bitint.cbu
+fi
+case "$use64bitint" in
+"$define"|true|[yY]*)
 	case "$longsize" in
 	4) case "$archname64" in
 	   '') archname64=64int ;;
@@ -5466,15 +5469,15 @@ case "$use64bitint" in
 	;;
 esac
 
-case "$use64bitall" in
-"$define"|true|[yY]*)
 : Look for a hint-file generated 'call-back-unit'.  If the
 : user has specified that a maximally 64-bit perl is to be built,
 : we may need to set or change some other defaults.
-	if $test -f use64bitall.cbu; then
-		echo "Your platform has some specific hints for 64-bit builds, using them..."
-		. ./use64bitall.cbu
-	fi
+if $test -f use64bitall.cbu; then
+	echo "Your platform has some specific hints regarding 64-bit builds, using them..."
+	. ./use64bitall.cbu
+fi
+case "$use64bitall" in
+"$define"|true|[yY]*)
 	case "$longsize" in
 	4) case "$archname64" in
 	   ''|64int) archname64=64all ;;
@@ -5489,7 +5492,7 @@ $undef:$define)
 	cat >&4 <<EOF
 
 *** You have chosen to use 64-bit integers,
-*** but none cannot be found.
+*** but none can be found.
 *** Please rerun Configure without -Duse64bitint and/or -Dusemorebits.
 *** Cannot continue, aborting.
 
@@ -5572,7 +5575,9 @@ EOCP
 		longdblsize="$ans"
 	fi
 	if $test "X$doublesize" = "X$longdblsize"; then
-		echo "(That isn't any different from an ordinary double.)"
+		echo "That isn't any different from an ordinary double."
+		echo "I'll keep your setting anyway, but you may see some"
+		echo "harmless compilation warnings."
 	fi	
 	;;
 esac
@@ -6255,6 +6260,27 @@ EOM
 esac
 
 
+: determine whether to use malloc wrapping
+echo " "
+case "$usemallocwrap" in
+[yY]*|true|$define)	dflt='y' ;;
+[nN]*|false|$undef)	dflt='n' ;;
+*)	case "$usedevel" in
+	[yY]*|true|$define)	dflt='y' ;;
+	*) dflt='n' ;;
+	esac
+	;;
+esac
+rp="Do you wish to wrap malloc calls to protect against potential overflows?"
+. ./myread
+usemallocwrap="$ans"
+case "$ans" in
+y*|true)
+	usemallocwrap="$define" ;;
+*)
+	usemallocwrap="$undef" ;;
+esac
+
 : determine which malloc to compile in
 echo " "
 case "$usemymalloc" in
@@ -6872,7 +6898,7 @@ EOM
 rp='List of earlier versions to include in @INC?'
 . ./myread
 case "$ans" in
-[Nn]one|''|' ') inc_version_list=' ' ;;
+[Nn]one|''|' '|$undef) inc_version_list=' ' ;;
 *) inc_version_list="$ans" ;;
 esac
 case "$inc_version_list" in
@@ -7355,9 +7381,9 @@ eval $inhdr
 : is a C symbol defined?
 csym='tlook=$1;
 case "$3" in
--v) tf=libc.tmp; tc=""; tdc="";;
--a) tf=libc.tmp; tc="[0]"; tdc="[]";;
-*) tlook="^$1\$"; tf=libc.list; tc=""; tdc="()";;
+-v) tf=libc.tmp; tdc="";;
+-a) tf=libc.tmp; tdc="[]";;
+*) tlook="^$1\$"; tf=libc.list; tdc="()";;
 esac;
 tx=yes;
 case "$reuseval-$4" in
@@ -7371,16 +7397,15 @@ yes)
 		if $contains $tlook $tf >/dev/null 2>&1; then
 			tval=true;
 		elif $test "$mistrustnm" = compile -o "$mistrustnm" = run; then
-			echo "int main() { extern void *$1$tdc; if (&$1$tc) return(0); else return(1); }" > try.c;
+			echo "void *(*(p()))$tdc { extern void *$1$tdc; return &$1; } int main() { if(p()) return(0); else return(1); }"> try.c;
 			$cc -o try $optimize $ccflags $ldflags try.c >/dev/null 2>&1 $libs && tval=true;
-			$test "$mistrustnm" = run -a -x try && { $run ./try >/dev/null 2>&1 || tval=false; };
-			$rm -f try try.c core;
+			$test "$mistrustnm" = run -a -x try && { $run ./try$_exe >/dev/null 2>&1 || tval=false; };
+			$rm -f try$_exe try.c core core.* try.core;
 		fi;
 	else
-		echo "#include <stdio.h>" > try.c;
-		echo "int main() { extern void *$1$tdc; if(&$1$tc) return(0); else return(1); }" > try.c;
+		echo "void *(*(p()))$tdc { extern void *$1$tdc; return &$1; } int main() { if(p()) return(0); else return(1); }"> try.c;
 		$cc -o try $optimize $ccflags $ldflags try.c $libs >/dev/null 2>&1 && tval=true;
-		$rm -f try try.c;
+		$rm -f try$_exe try.c;
 	fi;
 	;;
 *)
@@ -7623,11 +7648,9 @@ say "none".
 EOM
     case "$ccdlflags" in
     '') case "$osname" in
-		hpux)	dflt='-Wl,-E' ;;
-		linux)	dflt='-rdynamic' ;;
-		next)	dflt='none' ;;
-		sunos)	dflt='none' ;;
-		*)	dflt='none' ;;
+	    linux|hpux)	dflt='-Wl,-E' ;;
+	    next|sunos)	dflt='none' ;;
+	    *)		dflt='none' ;;
 	    esac ;;
     ' ')  dflt='none' ;;
     *)  dflt="$ccdlflags" ;;
@@ -8554,11 +8577,11 @@ else
 fi
 
 : determine where add-on html pages go
-: There is no standard location, so try to copy the previously-selected 
+: There is no standard location, so try to copy the previously-selected
 : directory structure for the core html pages.
-case "$sitehtml1" in
-'')	dflt=`echo "$html1dir" | $sed "s#^$prefix#$siteprefix#"` ;;
-*)	dflt=$sitehtml1 ;;
+case "$sitehtml1dir" in
+'')    dflt=`echo "$html1dir" | $sed "s#^$prefix#$siteprefix#"` ;;
+*)     dflt=$sitehtml1dir ;;
 esac
 case "$dflt" in
 ''|' ') dflt=none ;;
@@ -8566,23 +8589,21 @@ esac
 fn=dn+~
 rp='Pathname where the site-specific html pages should be installed?'
 . ./getfile
-sitehtml1="$ans"
-sitehtml1exp="$ansexp"
-: Use ' ' for none so value is preserved next time through Configure
-$test X"$sitehtml1" = "X" && sitehtml1=' '
+sitehtml1dir="$ans"
+sitehtml1direxp="$ansexp"
 : Change installation prefix, if necessary.
 if $test X"$prefix" != X"$installprefix"; then
-	installsitehtml1=`echo "$sitehtml1exp" | $sed "s#^$prefix#$installprefix#"`
+	installsitehtml1dir=`echo $sitehtml1direxp | $sed "s#^$prefix#$installprefix#"`
 else
-	installsitehtml1="$sitehtml1exp"
+	installsitehtml1dir="$sitehtml1direxp"
 fi
 
 : determine where add-on library html pages go
 : There is no standard location, so try to copy the previously-selected
 : directory structure for the core html pages.
-case "$sitehtml3" in
-'')	dflt=`echo "$html3dir" | $sed "s#^$prefix#$siteprefix#"` ;;
-*)	dflt=$sitehtml3 ;;
+case "$sitehtml3dir" in
+'')    dflt=`echo "$html3dir" | $sed "s#^$prefix#$siteprefix#"` ;;
+*)     dflt=$sitehtml3dir ;;
 esac
 case "$dflt" in
 ''|' ') dflt=none ;;
@@ -8590,21 +8611,19 @@ esac
 fn=dn+~
 rp='Pathname where the site-specific library html pages should be installed?'
 . ./getfile
-sitehtml3="$ans"
-sitehtml3exp="$ansexp"
-: Use ' ' for none so value is preserved next time through Configure
-$test X"$sitehtml3" = "X" && sitehtml3=' '
+sitehtml3dir="$ans"
+sitehtml3direxp="$ansexp"
 : Change installation prefix, if necessary.
 if $test X"$prefix" != X"$installprefix"; then
-	installsitehtml3=`echo "$sitehtml3exp" | $sed "s#^$prefix#$installprefix#"`
+	installsitehtml3dir=`echo $sitehtml3direxp | $sed "s#^$prefix#$installprefix#"`
 else
-	installsitehtml3="$sitehtml3exp"
+	installsitehtml3dir="$sitehtml3direxp"
 fi
 
 : determine where add-on manual pages go
-case "$siteman1" in
-'')	dflt=`echo "$man1dir" | $sed "s#^$prefix#$siteprefix#"` ;;
-*)	dflt=$siteman1 ;;
+case "$siteman1dir" in
+'')	dflt=`echo $man1dir | $sed "s#^$prefix#$siteprefix#"` ;;
+*)  	dflt=$siteman1dir ;;
 esac
 case "$dflt" in
 ''|' ') dflt=none ;;
@@ -8612,21 +8631,19 @@ esac
 fn=dn+~
 rp='Pathname where the site-specific manual pages should be installed?'
 . ./getfile
-siteman1="$ans"
-siteman1exp="$ansexp"
-: Use ' ' for none so value is preserved next time through Configure
-$test X"$siteman1" = "X" && siteman1=' '
+siteman1dir="$ans"
+siteman1direxp="$ansexp"
 : Change installation prefix, if necessary.
 if $test X"$prefix" != X"$installprefix"; then
-	installsiteman1=`echo "$siteman1exp" | $sed "s#^$prefix#$installprefix#"`
+	installsiteman1dir=`echo $siteman1direxp | $sed "s#^$prefix#$installprefix#"`
 else
-	installsiteman1="$siteman1exp"
+	installsiteman1dir="$siteman1direxp"
 fi
 
 : determine where add-on library man pages go
-case "$siteman3" in
-'')	dflt=`echo "$man3dir" | $sed "s#^$prefix#$siteprefix#"` ;;
-*)	dflt=$siteman3 ;;
+case "$siteman3dir" in
+'')	dflt=`echo $man3dir | $sed "s#^$prefix#$siteprefix#"` ;;
+*)  	dflt=$siteman3dir ;;
 esac
 case "$dflt" in
 ''|' ') dflt=none ;;
@@ -8634,15 +8651,13 @@ esac
 fn=dn+~
 rp='Pathname where the site-specific library manual pages should be installed?'
 . ./getfile
-siteman3="$ans"
-siteman3exp="$ansexp"
-: Use ' ' for none so value is preserved next time through Configure
-$test X"$siteman3" = "X" && siteman3=' '
+siteman3dir="$ans"
+siteman3direxp="$ansexp"
 : Change installation prefix, if necessary.
 if $test X"$prefix" != X"$installprefix"; then
-	installsiteman3=`echo "$siteman3exp" | $sed "s#^$prefix#$installprefix#"`
+	installsiteman3dir=`echo $siteman3direxp | $sed "s#^$prefix#$installprefix#"`
 else
-	installsiteman3="$siteman3exp"
+	installsiteman3dir="$siteman3direxp"
 fi
 
 : determine where add-on public executable scripts go
@@ -8860,14 +8875,16 @@ EOM
 esac
 set uselargefiles
 eval $setvar
-case "$uselargefiles" in
-"$define")
 : Look for a hint-file generated 'call-back-unit'.  If the
 : user has specified that a large files perl is to be built,
 : we may need to set or change some other defaults.
+if $test -f uselargefiles.cbu; then
+	echo "Your platform has some specific hints regarding large file builds, using them..."
+	. ./uselargefiles.cbu
+fi
+case "$uselargefiles" in
+"$define")
 	if $test -f uselargefiles.cbu; then
-		echo "Your platform has some specific hints for large file builds, using them..."
-		. ./uselargefiles.cbu
 		echo " "
 		echo "Rechecking to see how big your file offsets are..." >&4
 		$cat >try.c <<EOCP
@@ -8959,16 +8976,16 @@ else
 fi
 
 case "$vendorprefix" in
-'')	vendorhtml1=''
-	vendorhtml1exp=''
+'')	vendorhtml1dir=''
+	vendorhtml1direxp=''
 	;;
 *)	: determine where vendor-supplied html pages go.
 	: There is no standard location, so try to copy the previously-selected
 	: directory structure for the core html pages.
 	: XXX Better default suggestions would be welcome.
-	case "$vendorhtml1" in
+	case "$vendorhtml1dir" in
 	'')	dflt=`echo "$html1dir" | $sed "s#^$prefix#$vendorprefix#"` ;;
-	*)	dflt=$vendorhtml1 ;;
+	*)	dflt=$vendorhtml1dir ;;
 	esac
 	case "$dflt" in
 	''|' ') dflt=none ;;
@@ -8976,30 +8993,30 @@ case "$vendorprefix" in
 	fn=dn+~
 	rp='Pathname for the vendor-supplied html pages?'
 	. ./getfile
-	vendorhtml1="$ans"
-	vendorhtml1exp="$ansexp"
+	vendorhtml1dir="$ans"
+	vendorhtml1direxp="$ansexp"
 	;;
 esac
 : Use ' ' for none so value is preserved next time through Configure
-$test X"$vendorhtml1" = "X" && vendorhtml1=' '
+$test X"$vendorhtml1dir" = "X" && vendorhtml1dir=' '
 : Change installation prefix, if necessary.
 if $test X"$prefix" != X"$installprefix"; then
-	installvendorhtml1=`echo $vendorhtml1exp | $sed "s#^$prefix#$installprefix#"`
+	installvendorhtml1dir=`echo $vendorhtml1direxp | $sed "s#^$prefix#$installprefix#"`
 else
-	installvendorhtml1="$vendorhtml1exp"
+	installvendorhtml1dir="$vendorhtml1direxp"
 fi
 
 case "$vendorprefix" in
-'')	vendorhtml3=''
-	vendorhtml3exp=''
+'')	vendorhtml3dir=''
+	vendorhtml3direxp=''
 	;;
 *)	: determine where vendor-supplied module html pages go.
 	: There is no standard location, so try to copy the previously-selected
 	: directory structure for the core html pages.
 	: XXX Better default suggestions would be welcome.
-	case "$vendorhtml3" in
+	case "$vendorhtml3dir" in
 	'')	dflt=`echo "$html3dir" | $sed "s#^$prefix#$vendorprefix#"` ;;
-	*)	dflt=$vendorhtml3 ;;
+	*)	dflt=$vendorhtml3dir ;;
 	esac
 	case "$dflt" in
 	''|' ') dflt=none ;;
@@ -9007,27 +9024,27 @@ case "$vendorprefix" in
 	fn=dn+~
 	rp='Pathname for the vendor-supplied html pages?'
 	. ./getfile
-	vendorhtml3="$ans"
-	vendorhtml3exp="$ansexp"
+	vendorhtml3dir="$ans"
+	vendorhtml3direxp="$ansexp"
 	;;
 esac
 : Use ' ' for none so value is preserved next time through Configure
-$test X"$vendorhtml3" = "X" && vendorhtml3=' '
+$test X"$vendorhtml3dir" = "X" && vendorhtml3dir=' '
 : Change installation prefix, if necessary.
 if $test X"$prefix" != X"$installprefix"; then
-	installvendorhtml3=`echo $vendorhtml3exp | $sed "s#^$prefix#$installprefix#"`
+	installvendorhtml3dir=`echo $vendorhtml3direxp | $sed "s#^$prefix#$installprefix#"`
 else
-	installvendorhtml3="$vendorhtml3exp"
+	installvendorhtml3dir="$vendorhtml3direxp"
 fi
 
 case "$vendorprefix" in
-'')	vendorman1=''
-	vendorman1exp=''
+'')	vendorman1dir=''
+	vendorman1direxp=''
 	;;
 *)	: determine where vendor-supplied manual pages go.
-	case "$vendorman1" in
+	case "$vendorman1dir" in
 	'') dflt=`echo "$man1dir" | $sed "s#^$prefix#$vendorprefix#"` ;;
-	*)	dflt=$vendorman1 ;;
+	*)	dflt=$vendorman1dir ;;
 	esac
 	case "$dflt" in
 	''|' ') dflt=none ;;
@@ -9035,27 +9052,27 @@ case "$vendorprefix" in
 	fn=nd~+
 	rp='Pathname for the vendor-supplied manual section 1 pages?'
 	. ./getfile
-	vendorman1="$ans"
-	vendorman1exp="$ansexp"
+	vendorman1dir="$ans"
+	vendorman1direxp="$ansexp"
 	;;
 esac
 : Use ' ' for none so value is preserved next time through Configure
-$test X"$vendorman1" = "X" && vendorman1=' '
+$test X"$vendorman1dir" = "X" && vendorman1dir=' '
 : Change installation prefix, if necessary.
 if $test X"$prefix" != X"$installprefix"; then
-	installvendorman1=`echo "$vendorman1exp" | $sed "s#^$prefix#$installprefix#"`
+	installvendorman1dir=`echo "$vendorman1direxp" | $sed "s#^$prefix#$installprefix#"`
 else
-	installvendorman1="$vendorman1exp"
+	installvendorman1dir="$vendorman1direxp"
 fi
 
 case "$vendorprefix" in
-'')	vendorman3=''
-	vendorman3exp=''
+'')	vendorman3dir=''
+	vendorman3direxp=''
 	;;
 *)	: determine where vendor-supplied module manual pages go.
-	case "$vendorman3" in
+	case "$vendorman3dir" in
 	'') dflt=`echo "$man3dir" | $sed "s#^$prefix#$vendorprefix#"` ;;
-	*)	dflt=$vendorman3 ;;
+	*)	dflt=$vendorman3dir ;;
 	esac
 	case "$dflt" in
 	''|' ') dflt=none ;;
@@ -9063,17 +9080,17 @@ case "$vendorprefix" in
 	fn=nd~+
 	rp='Pathname for the vendor-supplied manual section 3 pages?'
 	. ./getfile
-	vendorman3="$ans"
-	vendorman3exp="$ansexp"
+	vendorman3dir="$ans"
+	vendorman3direxp="$ansexp"
 	;;
 esac
 : Use ' ' for none so value is preserved next time through Configure
-$test X"$vendorman3" = "X" && vendorman3=' '
+$test X"$vendorman3dir" = "X" && vendorman3dir=' '
 : Change installation prefix, if necessary.
 if $test X"$prefix" != X"$installprefix"; then
-	installvendorman3=`echo "$vendorman3exp" | $sed "s#^$prefix#$installprefix#"`
+	installvendorman3dir=`echo "$vendorman3direxp" | $sed "s#^$prefix#$installprefix#"`
 else
-	installvendorman3="$vendorman3exp"
+	installvendorman3dir="$vendorman3direxp"
 fi
 
 case "$vendorprefix" in
@@ -14237,10 +14254,6 @@ eval $inlibc
 set munmap d_munmap
 eval $inlibc
 
-: see if nanosleep exists
-set nanosleep d_nanosleep
-eval $inlibc
-
 : see if nice exists
 set nice d_nice
 eval $inlibc
@@ -15255,14 +15268,13 @@ else
     echo "You do not have union semun in <sys/sem.h>." >&4
     val="$undef"
 fi
-$rm -f try try.c try.h
+$rm -f try try.c
 set d_union_semun
 eval $setvar
 
 : see how to do semctl IPC_STAT
 case "$d_sem" in
 $define)
-    : see whether semctl IPC_STAT can use union semun
     echo " "
     $cat > try.h <<END
 #ifndef S_IRUSR
@@ -15288,8 +15300,11 @@ $define)
 #   define S_IRWXO (S_IROTH|S_IWOTH|S_IXOTH)
 #endif
 END
-
-    $cat > try.c <<END
+    : see whether semctl IPC_STAT can use union semun
+    val="$undef"
+    case "$d_semctl_semun" in
+    '')
+      $cat > try.c <<END
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
@@ -15335,15 +15350,16 @@ int main() {
   return 0;
 }
 END
-    val="$undef"
-    set try
-    if eval $compile; then
-	xxx=`$run ./try`
-        case "$xxx" in
-        semun) val="$define" ;;
-        esac
-    fi
-    $rm -f try try.c
+      set try
+      if eval $compile; then
+	  xxx=`$run ./try`
+          case "$xxx" in
+          semun) val="$define" ;;
+          esac
+      fi
+      $rm -f try try.c
+      ;;
+    esac
     set d_semctl_semun
     eval $setvar
     case "$d_semctl_semun" in
@@ -15357,7 +15373,10 @@ END
     esac
 
     : see whether semctl IPC_STAT can use struct semid_ds pointer
-    $cat > try.c <<'END'
+    val="$undef"
+    case "$d_semctl_semid_ds" in
+    '')
+      $cat > try.c <<'END'
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
@@ -15393,15 +15412,16 @@ int main() {
     return 0;
 }
 END
-    val="$undef"
-    set try
-    if eval $compile; then
-        xxx=`$run ./try`
-        case "$xxx" in
-        semid_ds) val="$define" ;;
-        esac
-    fi
-    $rm -f try try.c
+      set try
+      if eval $compile; then
+          xxx=`$run ./try`
+          case "$xxx" in
+          semid_ds) val="$define" ;;
+          esac
+      fi
+      $rm -f try try.c
+      ;;
+    esac
     set d_semctl_semid_ds
     eval $setvar
     case "$d_semctl_semid_ds" in
@@ -16958,10 +16978,10 @@ int main() {
     buf[1] = 0;
     buf[2] = 0;
     buf[3] = 1;
+    buf[4] = 0;
     buf[5] = 0;
     buf[6] = 0;
-    buf[7] = 0;
-    buf[8] = 1;
+    buf[7] = 1;
 
     for (i = 0; i < 4; i++) {
 	up = (U32*)(buf + i);
@@ -18645,12 +18665,6 @@ pager="$ans"
 rp="What is the type of process ids on this system?"
 set pid_t pidtype int stdio.h sys/types.h
 eval $typedef_ask
-
-: Find earliest binary compatible site_perl subdirectory perl can use.
-xs_apiversion=$version # The current site_perl version.
-: Find earliest pure perl site_perl subdirectory perl can use.
-: The versioned directories started at 5.005.
-pm_apiversion='5.005'
 
 : see if ar generates random libraries by itself
 echo " "
@@ -20716,7 +20730,6 @@ d_msgsnd='$d_msgsnd'
 d_msync='$d_msync'
 d_munmap='$d_munmap'
 d_mymalloc='$d_mymalloc'
-d_nanosleep='$d_nanosleep'
 d_nice='$d_nice'
 d_nl_langinfo='$d_nl_langinfo'
 d_nv_preserves_uv='$d_nv_preserves_uv'
@@ -21089,21 +21102,21 @@ installprivlib='$installprivlib'
 installscript='$installscript'
 installsitearch='$installsitearch'
 installsitebin='$installsitebin'
-installsitehtml1='$installsitehtml1'
-installsitehtml3='$installsitehtml3'
+installsitehtml1dir='$installsitehtml1dir'
+installsitehtml3dir='$installsitehtml3dir'
 installsitelib='$installsitelib'
-installsiteman1='$installsiteman1'
-installsiteman3='$installsiteman3'
+installsiteman1dir='$installsiteman1dir'
+installsiteman3dir='$installsiteman3dir'
 installsitescript='$installsitescript'
 installstyle='$installstyle'
 installusrbinperl='$installusrbinperl'
 installvendorarch='$installvendorarch'
 installvendorbin='$installvendorbin'
-installvendorhtml1='$installvendorhtml1'
-installvendorhtml3='$installvendorhtml3'
+installvendorhtml1dir='$installvendorhtml1dir'
+installvendorhtml3dir='$installvendorhtml3dir'
 installvendorlib='$installvendorlib'
-installvendorman1='$installvendorman1'
-installvendorman3='$installvendorman3'
+installvendorman1dir='$installvendorman1dir'
+installvendorman3dir='$installvendorman3dir'
 installvendorscript='$installvendorscript'
 intsize='$intsize'
 issymlink='$issymlink'
@@ -21213,7 +21226,6 @@ pg='$pg'
 phostname='$phostname'
 pidtype='$pidtype'
 plibpth='$plibpth'
-pm_apiversion='$pm_apiversion'
 pmake='$pmake'
 pr='$pr'
 prefix='$prefix'
@@ -21284,17 +21296,17 @@ sitearch='$sitearch'
 sitearchexp='$sitearchexp'
 sitebin='$sitebin'
 sitebinexp='$sitebinexp'
-sitehtml1='$sitehtml1'
-sitehtml1exp='$sitehtml1exp'
-sitehtml3='$sitehtml3'
-sitehtml3exp='$sitehtml3exp'
+sitehtml1dir='$sitehtml1dir'
+sitehtml1direxp='$sitehtml1direxp'
+sitehtml3dir='$sitehtml3dir'
+sitehtml3direxp='$sitehtml3direxp'
 sitelib='$sitelib'
 sitelib_stem='$sitelib_stem'
 sitelibexp='$sitelibexp'
-siteman1='$siteman1'
-siteman1exp='$siteman1exp'
-siteman3='$siteman3'
-siteman3exp='$siteman3exp'
+siteman1dir='$siteman1dir'
+siteman1direxp='$siteman1direxp'
+siteman3dir='$siteman3dir'
+siteman3direxp='$siteman3direxp'
 siteprefix='$siteprefix'
 siteprefixexp='$siteprefixexp'
 sitescript='$sitescript'
@@ -21368,6 +21380,7 @@ usefaststdio='$usefaststdio'
 useithreads='$useithreads'
 uselargefiles='$uselargefiles'
 uselongdouble='$uselongdouble'
+usemallocwrap='$usemallocwrap'
 usemorebits='$usemorebits'
 usemultiplicity='$usemultiplicity'
 usemymalloc='$usemymalloc'
@@ -21394,17 +21407,17 @@ vendorarch='$vendorarch'
 vendorarchexp='$vendorarchexp'
 vendorbin='$vendorbin'
 vendorbinexp='$vendorbinexp'
-vendorhtml1='$vendorhtml1'
-vendorhtml1exp='$vendorhtml1exp'
-vendorhtml3='$vendorhtml3'
-vendorhtml3exp='$vendorhtml3exp'
+vendorhtml1dir='$vendorhtml1dir'
+vendorhtml1direxp='$vendorhtml1direxp'
+vendorhtml3dir='$vendorhtml3dir'
+vendorhtml3direxp='$vendorhtml3direxp'
 vendorlib='$vendorlib'
 vendorlib_stem='$vendorlib_stem'
 vendorlibexp='$vendorlibexp'
-vendorman1='$vendorman1'
-vendorman1exp='$vendorman1exp'
-vendorman3='$vendorman3'
-vendorman3exp='$vendorman3exp'
+vendorman1dir='$vendorman1dir'
+vendorman1direxp='$vendorman1direxp'
+vendorman3dir='$vendorman3dir'
+vendorman3direxp='$vendorman3direxp'
 vendorprefix='$vendorprefix'
 vendorprefixexp='$vendorprefixexp'
 vendorscript='$vendorscript'
@@ -21415,7 +21428,6 @@ versiononly='$versiononly'
 vi='$vi'
 voidflags='$voidflags'
 xlibpth='$xlibpth'
-xs_apiversion='$xs_apiversion'
 yacc='$yacc'
 yaccflags='$yaccflags'
 zcat='$zcat'

@@ -9,6 +9,17 @@ case $PERL_CONFIG_SH in
 	. $TOP/config.sh
 	;;
 esac
+
+# H.Merijn Brand [17 Feb 2004]
+# This comment is just to ensure that Configure will find variables that
+# are removed/replaced in patches on blead, but are still needed in the
+# 5.8.x, 5.6.x and 5.005.x maintainance tracks.
+# metaconfig -m will scan all .SH files on this level (not deeper), and
+# not in x2p and other subfolders. This file is as good as any .SH
+# patch   references
+# #22227 $baserev
+# #22302 $yacc $byacc
+
 : This forces SH files to create target in same directory as SH file.
 : This is so that make depend always knows where to find SH derivatives.
 case "$0" in
@@ -310,13 +321,11 @@ shextract = Makefile cflags config.h makeaperl makedepend \
 # available.  Dependencies handled manually below (for now).
 
 pl = pod/pod2html.PL pod/pod2latex.PL pod/pod2man.PL pod/pod2text.PL \
-	pod/pod2usage.PL pod/podchecker.PL pod/podselect.PL \
-	pod/buildtoc.PL
+	pod/pod2usage.PL pod/podchecker.PL pod/podselect.PL
 
 # lib/lib.pm is not listed here because it has a rule of its own.
 plextract = pod/pod2html pod/pod2latex pod/pod2man pod/pod2text \
-	pod/pod2usage pod/podchecker pod/podselect \
-	pod/buildtoc
+	pod/pod2usage pod/podchecker pod/podselect
 
 addedbyconf = UU $(shextract) $(plextract) lib/lib.pm pstruct
 
@@ -579,7 +588,7 @@ miniperl$(EXE_EXT): $& miniperlmain$(OBJ_EXT) $(LIBPERL) opmini$(OBJ_EXT)
 		$spitshell >>Makefile <<'!NO!SUBS!'
 miniperl$(EXE_EXT): $& miniperlmain$(OBJ_EXT) $(LIBPERL) opmini$(OBJ_EXT)
 	-@rm -f miniperl.xok
-	$(CC) $(CLDFLAGS) -o miniperl \
+	$(LDLIBPTH) $(CC) $(CLDFLAGS) -o miniperl \
 	    miniperlmain$(OBJ_EXT) opmini$(OBJ_EXT) $(LLIBPERL) $(libs)
 	$(LDLIBPTH) ./miniperl -w -Ilib -MExporter -e '<?>' || $(MAKE) minitest
 !NO!SUBS!
@@ -590,18 +599,29 @@ miniperl$(EXE_EXT): $& miniperlmain$(OBJ_EXT) $(LIBPERL) opmini$(OBJ_EXT)
 
 perl$(EXE_EXT): $& perlmain$(OBJ_EXT) $(LIBPERL) $(DYNALOADER) $(static_ext) ext.libs $(PERLEXPORT)
 	-@rm -f miniperl.xok
-	$(SHRPENV) $(CC) -o perl$(PERL_SUFFIX) $(PERL_PROFILE_LDFLAGS) $(CLDFLAGS) $(CCDLFLAGS) perlmain$(OBJ_EXT) $(DYNALOADER) $(static_ext) $(LLIBPERL) `cat ext.libs` $(libs)
+	$(SHRPENV) $(LDLIBPTH) $(CC) -o perl$(PERL_SUFFIX) $(PERL_PROFILE_LDFLAGS) $(CLDFLAGS) $(CCDLFLAGS) perlmain$(OBJ_EXT) $(DYNALOADER) $(static_ext) $(LLIBPERL) `cat ext.libs` $(libs)
 
 # Purify/Quantify Perls.
 
 pureperl$(EXE_EXT): $& perlmain$(OBJ_EXT) $(LIBPERL) $(DYNALOADER) $(static_ext) ext.libs $(PERLEXPORT)
-	$(SHRPENV) purify $(CC) -o pureperl $(CLDFLAGS) $(CCDLFLAGS) perlmain$(OBJ_EXT) $(DYNALOADER) $(static_ext) $(LLIBPERL) `cat ext.libs` $(libs)
+	$(SHRPENV) $(LDLIBPTH) purify $(CC) -o pureperl $(CLDFLAGS) $(CCDLFLAGS) perlmain$(OBJ_EXT) $(DYNALOADER) $(static_ext) $(LLIBPERL) `cat ext.libs` $(libs)
 
 purecovperl$(EXE_EXT): $& perlmain$(OBJ_EXT) $(LIBPERL) $(DYNALOADER) $(static_ext) ext.libs $(PERLEXPORT)
-	$(SHRPENV) purecov $(CC) -o purecovperl $(CLDFLAGS) $(CCDLFLAGS) perlmain$(OBJ_EXT) $(DYNALOADER) $(static_ext) $(LLIBPERL) `cat ext.libs` $(libs)
+	$(SHRPENV) $(LDLIBPTH) purecov $(CC) -o purecovperl $(CLDFLAGS) $(CCDLFLAGS) perlmain$(OBJ_EXT) $(DYNALOADER) $(static_ext) $(LLIBPERL) `cat ext.libs` $(libs)
 
 quantperl$(EXE_EXT): $& perlmain$(OBJ_EXT) $(LIBPERL) $(DYNALOADER) $(static_ext) ext.libs $(PERLEXPORT)
-	$(SHRPENV) quantify $(CC) -o quantperl $(CLDFLAGS) $(CCDLFLAGS) perlmain$(OBJ_EXT) $(DYNALOADER) $(static_ext) $(LLIBPERL) `cat ext.libs` $(libs)
+	$(SHRPENV) $(LDLIBPTH) quantify $(CC) -o quantperl $(CLDFLAGS) $(CCDLFLAGS) perlmain$(OBJ_EXT) $(DYNALOADER) $(static_ext) $(LLIBPERL) `cat ext.libs` $(libs)
+
+# Valgrind perl (currently Linux only)
+
+perl.valgrind.config: config.sh
+	@echo "To build perl.valgrind you must Configure -Doptimize=-g -Uusemymalloc, checking..."
+	@$(MAKE) perl.config.dashg
+	@echo "Checking usemymalloc='n' in config.sh..."
+	@grep "^usemymalloc="    config.sh
+	@grep "^usemymalloc='n'" config.sh >/dev/null || exit 1
+	@echo "And of course you have to have valgrind..."
+	valgrind ./perl -e 1 2>/dev/null || exit 1
 
 # Third Degree Perl (Tru64 only)
 
@@ -688,7 +708,7 @@ microperl:
 # has been invoked correctly.
 
 suidperl$(EXE_EXT): $& sperl$(OBJ_EXT) perlmain$(OBJ_EXT) $(LIBPERL) $(DYNALOADER) $(static_ext) ext.libs $(PERLEXPORT)
-	$(SHRPENV) $(CC) -o suidperl $(CLDFLAGS) $(CCDLFLAGS) perlmain$(OBJ_EXT) sperl$(OBJ_EXT) $(DYNALOADER) $(static_ext) $(LLIBPERL) `cat ext.libs` $(libs)
+	$(SHRPENV) $(LDLIBPTH) $(CC) -o suidperl $(CLDFLAGS) $(CCDLFLAGS) perlmain$(OBJ_EXT) sperl$(OBJ_EXT) $(DYNALOADER) $(static_ext) $(LLIBPERL) `cat ext.libs` $(libs)
 
 !NO!SUBS!
 
@@ -752,35 +772,43 @@ extra.pods: miniperl$(EXE_EXT)
 	done
 	-@rm -f pod/perlvms.pod
 	-@test -f vms/perlvms.pod && cd pod && $(LNS) ../vms/perlvms.pod perlvms.pod && cd .. && echo "pod/perlvms.pod" >> extra.pods
+	-@rm -f pod/perldelta.pod
+	-@test -f pod/perl584delta.pod && cd pod && $(LNS) perl584delta.pod perldelta.pod && cd .. && echo "pod/perldelta.pod" >> extra.pods
 
 extras.make: perl$(EXE_EXT)
-	-@test -s extras.lst && PATH=`pwd`:${PATH} PERL5LIB=`pwd`/lib $(LDLIBPTH) ./perl -Ilib -MCPAN -e '@ARGV&&make(@ARGV)' `cat extras.lst`
+	-@test -s extras.lst && PATH="`pwd`:${PATH}" PERL5LIB="`pwd`/lib" $(LDLIBPTH) ./perl -Ilib -MCPAN -e '@ARGV&&make(@ARGV)' `cat extras.lst`
 
 extras.test: perl$(EXE_EXT)
-	-@test -s extras.lst && PATH=`pwd`:${PATH} PERL5LIB=`pwd`/lib $(LDLIBPTH) ./perl -Ilib -MCPAN -e '@ARGV&&test(@ARGV)' `cat extras.lst`
+	-@test -s extras.lst && PATH="`pwd`:${PATH}" PERL5LIB="`pwd`/lib" $(LDLIBPTH) ./perl -Ilib -MCPAN -e '@ARGV&&test(@ARGV)' `cat extras.lst`
 
 extras.install: perl$(EXE_EXT)
-	-@test -s extras.lst && PATH=`pwd`:${PATH} PERL5LIB=`pwd`/lib $(LDLIBPTH) ./perl -Ilib -MCPAN -e '@ARGV&&install(@ARGV)' `cat extras.lst`
+	-@test -s extras.lst && PATH="`pwd`:${PATH}" PERL5LIB="`pwd`/lib" $(LDLIBPTH) ./perl -Ilib -MCPAN -e '@ARGV&&install(@ARGV)' `cat extras.lst`
 
 .PHONY: install install-strip install-all install-verbose install-silent \
 	no-install install.perl install.man install.html
 
+META.yml:	Porting/makemeta Porting/Maintainers.pl Porting/Maintainers.pm
+	$(LDLIBPTH) ./miniperl -Ilib Porting/makemeta
+
 install-strip:
-	$(MAKE) STRIPFLAGS=-s install
+	$(MAKE) STRIPFLAGS=-s install DESTDIR="$(DESTDIR)"
 
 install install-all:
-	$(MAKE) install.perl install.man STRIPFLAGS=$(STRIPFLAGS)
+	$(MAKE) install.perl install.man STRIPFLAGS=$(STRIPFLAGS) DESTDIR="$(DESTDIR)"
 
 install-verbose:
-	$(MAKE) install.perl install.man STRIPFLAGS=$(STRIPFLAGS) INSTALLFLAGS=-V
+	$(MAKE) install.perl install.man STRIPFLAGS=$(STRIPFLAGS) INSTALLFLAGS=-V DESTDIR="$(DESTDIR)"
 
 install-silent:
-	$(MAKE) install.perl install.man STRIPFLAGS=$(STRIPFLAGS) INSTALLFLAGS=-S
+	$(MAKE) install.perl install.man STRIPFLAGS=$(STRIPFLAGS) INSTALLFLAGS=-S DESTDIR="$(DESTDIR)"
 
 no-install:
-	$(MAKE) install.perl install.man STRIPFLAGS=$(STRIPFLAGS) INSTALLFLAGS=-n
+	$(MAKE) install.perl install.man STRIPFLAGS=$(STRIPFLAGS) INSTALLFLAGS=-n DESTDIR="$(DESTDIR)"
 
-install.perl:	all installperl
+# Set this to an empty string to avoid an attempt of rebuild before install
+INSTALL_DEPENDENCE = all
+
+install.perl:	$(INSTALL_DEPENDENCE) installperl
 	if [ -n "$(COMPILE)" ]; \
 	then \
 		cd utils; $(MAKE) compile; \
@@ -892,8 +920,8 @@ regen_all: $(PERLYVMS) regen regen_pods
 .PHONY:	manisort manicheck
 
 manisort:	FORCE
-	LC_ALL=C sort -fc MANIFEST || (echo "WARNING: re-sorting MANIFEST"; \
-		LC_ALL=C sort -fo MANIFEST MANIFEST)
+	LC_ALL=C sort -fdc MANIFEST || (echo "WARNING: re-sorting MANIFEST"; \
+		LC_ALL=C sort -fdo MANIFEST MANIFEST)
 
 manicheck:	FORCE
 	perl Porting/manicheck
@@ -1043,7 +1071,7 @@ makedepend: makedepend.SH config.sh
 	utest ucheck test.utf8 check.utf8 test.torture torturetest \
 	test.third check.third utest.third ucheck.third test_notty.third \
 	test.deparse test_notty.deparse test_harness test_harness_notty \
-	test.bytecompile minitest coretest
+	test.bytecompile minitest coretest test.taintwarn
 
 # Cannot delegate rebuilding of t/perl to make
 # to allow interlaced test and minitest
@@ -1102,6 +1130,20 @@ test-notty:	test_notty
 test.torture torturetest:	test_prep
 	PERL=./perl TEST_ARGS=-torture $(MAKE) _test
 
+# Targets for valgrind testing:
+
+test_prep.valgrind: test_prep perl.valgrind
+	PERL=./perl $(MAKE) _test_prep
+
+test.valgrind check.valgrind:	test_prep perl.valgrind.config
+	PERL=./perl PERL_DEBUG=PERL_VALGRIND=1 $(MAKE) _test
+
+utest.valgrind ucheck.valgrind: test_prep.valgrind perl.valgrind
+	PERL=./perl PERL_DEBUG=PERL_VALGRIND=1 TEST_ARGS=-utf8 $(MAKE) _test
+
+test_notty.valgrind: test_prep.valgrind perl.valgrind
+	PERL=./perl $(MAKE) PERL_DEBUG=PERL_VALGRIND=1 _test_notty
+
 # Targets for Third Degree testing.
 
 test_prep.third: test_prep perl.third
@@ -1129,6 +1171,11 @@ test.deparse:	test_prep
 test_notty.deparse:	test_prep
 	PERL=./perl TEST_ARGS=-deparse $(MAKE) _test_notty
 
+# Targets to run the test suite with -t
+
+test.taintwarn:	test_prep
+	PERL=./perl TEST_ARGS=-taintwarn $(MAKE) _test
+
 # Can't depend on lib/Config.pm because that might be where miniperl
 # is crashing.
 minitest: miniperl$(EXE_EXT) lib/re.pm
@@ -1139,7 +1186,7 @@ minitest: miniperl$(EXE_EXT) lib/re.pm
 	@echo "to build lib/Config.pm or lib/lib.pm."
 	@echo " "
 	- cd t && (rm -f perl$(EXE_EXT); $(LNS) ../miniperl$(EXE_EXT) perl$(EXE_EXT)) \
-		&& $(LDLIBPTH) ./perl TEST base/*.t comp/*.t cmd/*.t run/*.t io/*.t op/*.t uni/*.t </dev/tty
+		&& $(LDLIBPTH) ./perl TEST -minitest base/*.t comp/*.t cmd/*.t run/*.t io/*.t op/*.t uni/*.t </dev/tty
 
 # Test via harness
 

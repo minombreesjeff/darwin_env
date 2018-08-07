@@ -1,7 +1,7 @@
 /*    toke.c
  *
  *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -250,18 +250,23 @@ S_no_op(pTHX_ char *what, char *s)
     else
 	PL_bufptr = s;
     yywarn(Perl_form(aTHX_ "%s found where operator expected", what));
-    if (is_first)
-	Perl_warn(aTHX_ "\t(Missing semicolon on previous line?)\n");
-    else if (PL_oldoldbufptr && isIDFIRST_lazy_if(PL_oldoldbufptr,UTF)) {
-	char *t;
-	for (t = PL_oldoldbufptr; *t && (isALNUM_lazy_if(t,UTF) || *t == ':'); t++) ;
-	if (t < PL_bufptr && isSPACE(*t))
-	    Perl_warn(aTHX_ "\t(Do you need to predeclare %.*s?)\n",
-		t - PL_oldoldbufptr, PL_oldoldbufptr);
-    }
-    else {
-	assert(s >= oldbp);
-	Perl_warn(aTHX_ "\t(Missing operator before %.*s?)\n", s - oldbp, oldbp);
+    if (ckWARN_d(WARN_SYNTAX)) {
+	if (is_first)
+	    Perl_warner(aTHX_ packWARN(WARN_SYNTAX),
+		    "\t(Missing semicolon on previous line?)\n");
+	else if (PL_oldoldbufptr && isIDFIRST_lazy_if(PL_oldoldbufptr,UTF)) {
+	    char *t;
+	    for (t = PL_oldoldbufptr; *t && (isALNUM_lazy_if(t,UTF) || *t == ':'); t++) ;
+	    if (t < PL_bufptr && isSPACE(*t))
+		Perl_warner(aTHX_ packWARN(WARN_SYNTAX),
+			"\t(Do you need to predeclare %.*s?)\n",
+		    t - PL_oldoldbufptr, PL_oldoldbufptr);
+	}
+	else {
+	    assert(s >= oldbp);
+	    Perl_warner(aTHX_ packWARN(WARN_SYNTAX),
+		    "\t(Missing operator before %.*s?)\n", s - oldbp, oldbp);
+	}
     }
     PL_bufptr = oldbp;
 }
@@ -1315,7 +1320,7 @@ S_scan_const(pTHX_ char *start)
 	   except for the last char, which will be done separately. */
 	else if (*s == '(' && PL_lex_inpat && s[1] == '?') {
 	    if (s[2] == '#') {
-		while (s < send && *s != ')')
+		while (s+1 < send && *s != ')')
 		    *d++ = NATIVE_TO_NEED(has_utf8,*s++);
 	    }
 	    else if (s[2] == '{' /* This should match regcomp.c */
@@ -1334,10 +1339,8 @@ S_scan_const(pTHX_ char *start)
 			count--;
 		    regparse++;
 		}
-		if (*regparse != ')') {
+		if (*regparse != ')')
 		    regparse--;		/* Leave one char for continuation. */
-		    yyerror("Sequence (?{...}) not terminated or not {}-balanced");
-		}
 		while (s < regparse)
 		    *d++ = NATIVE_TO_NEED(has_utf8,*s++);
 	    }
@@ -2426,8 +2429,12 @@ Perl_yylex(pTHX)
 	if (!PL_rsfp) {
 	    PL_last_uni = 0;
 	    PL_last_lop = 0;
-	    if (PL_lex_brackets)
-		yyerror("Missing right curly or square bracket");
+	    if (PL_lex_brackets) {
+ 	        if (PL_lex_formbrack)
+		    yyerror("Format not terminated");
+                else
+		    yyerror("Missing right curly or square bracket");
+	    }
             DEBUG_T( { PerlIO_printf(Perl_debug_log,
                         "### Tokener got EOF\n");
             } );
@@ -2874,10 +2881,10 @@ Perl_yylex(pTHX)
 		/* Assume it was a minus followed by a one-letter named
 		 * subroutine call (or a -bareword), then. */
 		DEBUG_T( { PerlIO_printf(Perl_debug_log,
-			"### %c looked like a file test but was not\n",
-			(int)ftst);
+			"### '-%c' looked like a file test but was not\n",
+			tmp);
 		} );
-		s -= 2;
+		s = --PL_bufptr;
 	    }
 	}
 	tmp = *s++;
@@ -3024,19 +3031,25 @@ Perl_yylex(pTHX)
 		    PL_lex_stuff = Nullsv;
 		}
 		else {
+		    if (len == 6 && strnEQ(s, "unique", len)) {
+			if (PL_in_my == KEY_our)
+#ifdef USE_ITHREADS
+			    GvUNIQUE_on(cGVOPx_gv(yylval.opval));
+#else
+			    ; /* skip to avoid loading attributes.pm */
+#endif
+			else 
+			    Perl_croak(aTHX_ "The 'unique' attribute may only be applied to 'our' variables");
+		    }
+
 		    /* NOTE: any CV attrs applied here need to be part of
 		       the CVf_BUILTIN_ATTRS define in cv.h! */
-		    if (!PL_in_my && len == 6 && strnEQ(s, "lvalue", len))
+		    else if (!PL_in_my && len == 6 && strnEQ(s, "lvalue", len))
 			CvLVALUE_on(PL_compcv);
 		    else if (!PL_in_my && len == 6 && strnEQ(s, "locked", len))
 			CvLOCKED_on(PL_compcv);
 		    else if (!PL_in_my && len == 6 && strnEQ(s, "method", len))
 			CvMETHOD_on(PL_compcv);
-#ifdef USE_ITHREADS
-		    else if (PL_in_my == KEY_our && len == 6 &&
-			     strnEQ(s, "unique", len))
-			GvUNIQUE_on(cGVOPx_gv(yylval.opval));
-#endif
 		    /* After we've set the flags, it could be argued that
 		       we don't need to do the attributes.pm-based setting
 		       process, and shouldn't bother appending recognized
@@ -3553,9 +3566,7 @@ Perl_yylex(pTHX)
 		    }
 		}
 		else {
-		    GV *gv = gv_fetchpv(tmpbuf, FALSE, SVt_PVCV);
-		    if (gv && GvCVu(gv))
-			PL_expect = XTERM;	/* e.g. print $fh subr() */
+		    PL_expect = XTERM;		/* e.g. print $fh subr() */
 		}
 	    }
 	    else if (isDIGIT(*s))
@@ -5504,7 +5515,9 @@ Perl_keyword(pTHX_ register char *d, I32 len)
 	    break;
 	case 6:
 	    if (strEQ(d,"exists"))		return KEY_exists;
-	    if (strEQ(d,"elseif")) Perl_warn(aTHX_ "elseif should be elsif");
+	    if (strEQ(d,"elseif") && ckWARN_d(WARN_SYNTAX))
+		Perl_warner(aTHX_ packWARN(WARN_SYNTAX),
+			"elseif should be elsif");
 	    break;
 	case 8:
 	    if (strEQ(d,"endgrent"))		return -KEY_endgrent;
@@ -6976,7 +6989,7 @@ S_scan_str(pTHX_ char *start, int keep_quoted, int keep_delims)
 		    goto read_more_line;
 		else {
 		    /* handle quoted delimiters */
-		    if (*(svlast-1) == '\\') {
+		    if (SvCUR(sv) > 1 && *(svlast-1) == '\\') {
 			char *t;
 			for (t = svlast-2; t >= SvPVX(sv) && *t == '\\';)
 			    t--;
@@ -7579,20 +7592,23 @@ S_scan_formline(pTHX_ register char *s)
     register char *t;
     SV *stuff = newSVpvn("",0);
     bool needargs = FALSE;
+    bool eofmt = FALSE;
 
     while (!needargs) {
-	if (*s == '.' || *s == /*{*/'}') {
+	if (*s == '.') {
 	    /*SUPPRESS 530*/
 #ifdef PERL_STRICT_CR
 	    for (t = s+1;SPACE_OR_TAB(*t); t++) ;
 #else
 	    for (t = s+1;SPACE_OR_TAB(*t) || *t == '\r'; t++) ;
 #endif
-	    if (*t == '\n' || t == PL_bufend)
+	    if (*t == '\n' || t == PL_bufend) {
+	        eofmt = TRUE;
 		break;
+            }
 	}
 	if (PL_in_eval && !PL_rsfp) {
-	    eol = strchr(s,'\n');
+	    eol = memchr(s,'\n',PL_bufend-s);
 	    if (!eol++)
 		eol = PL_bufend;
 	}
@@ -7629,7 +7645,6 @@ S_scan_formline(pTHX_ register char *s)
 	    PL_last_lop = PL_last_uni = Nullch;
 	    if (!s) {
 		s = PL_bufptr;
-		yyerror("Format not terminated");
 		break;
 	    }
 	}
@@ -7658,7 +7673,8 @@ S_scan_formline(pTHX_ register char *s)
     }
     else {
 	SvREFCNT_dec(stuff);
-	PL_lex_formbrack = 0;
+	if (eofmt)
+	    PL_lex_formbrack = 0;
 	PL_bufptr = s;
     }
     return s;
@@ -7796,8 +7812,8 @@ Perl_yyerror(pTHX_ char *s)
                 (int)PL_multi_open,(int)PL_multi_close,(IV)PL_multi_start);
         PL_multi_end = 0;
     }
-    if (PL_in_eval & EVAL_WARNONLY)
-	Perl_warn(aTHX_ "%"SVf, msg);
+    if (PL_in_eval & EVAL_WARNONLY && ckWARN_d(WARN_SYNTAX))
+	Perl_warner(aTHX_ packWARN(WARN_SYNTAX), "%"SVf, msg);
     else
 	qerror(msg);
     if (PL_error_count >= 10) {
@@ -7981,9 +7997,6 @@ Perl_scan_vstring(pTHX_ char *s, SV *sv)
 	    return pos;
 	}
     }
-
-    if (ckWARN(WARN_DEPRECATED))
-	Perl_warner(aTHX_ packWARN(WARN_DEPRECATED), "v-strings are deprecated");
 
     if (!isALPHA(*pos)) {
 	UV rev;

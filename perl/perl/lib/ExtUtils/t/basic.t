@@ -42,6 +42,7 @@ ok( chdir('Big-Dummy'), "chdir'd to Big-Dummy" ) ||
   diag("chdir failed: $!");
 
 my @mpl_out = run(qq{$perl Makefile.PL "PREFIX=../dummy-install"});
+END { rmtree '../dummy-install'; }
 
 cmp_ok( $?, '==', 0, 'Makefile.PL exited with zero' ) ||
   diag(@mpl_out);
@@ -105,14 +106,16 @@ END { unlink 'Big-Dummy.ppd' }
 
 my $test_out = run("$make test");
 like( $test_out, qr/All tests successful/, 'make test' );
-is( $?, 0,                                 '  exited normally' );
+is( $?, 0,                                 '  exited normally' ) || 
+    diag $test_out;
 
 # Test 'make test TEST_VERBOSE=1'
 my $make_test_verbose = make_macro($make, 'test', TEST_VERBOSE => 1);
 $test_out = run("$make_test_verbose");
 like( $test_out, qr/ok \d+ - TEST_VERBOSE/, 'TEST_VERBOSE' );
 like( $test_out, qr/All tests successful/,  '  successful' );
-is( $?, 0,                                  '  exited normally' );
+is( $?, 0,                                  '  exited normally' ) ||
+    diag $test_out;
 
 
 my $install_out = run("$make install");

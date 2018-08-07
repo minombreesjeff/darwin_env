@@ -379,12 +379,19 @@ sub _create_runperl { # Create the string to qx in runperl().
 	}
     }
     if ($args{switches}) {
+	local $Level = 2;
+	die "test.pl:runperl(): 'switches' must be an ARRAYREF " . _where()
+	    unless ref $args{switches} eq "ARRAY";
 	_quote_args(\$runperl, $args{switches});
     }
     if (defined $args{prog}) {
+	die "test.pl:runperl(): both 'prog' and 'progs' cannot be used " . _where()
+	    if defined $args{progs};
         $args{progs} = [$args{prog}]
     }
     if (defined $args{progs}) {
+	die "test.pl:runperl(): 'progs' must be an ARRAYREF " . _where()
+	    unless ref $args{progs} eq "ARRAY";
         foreach my $prog (@{$args{progs}}) {
             if ($is_mswin || $is_netware || $is_vms) {
                 $runperl .= qq ( -e "$prog" );
@@ -579,7 +586,7 @@ sub _fresh_perl {
 }
 
 #
-# run_perl_is
+# fresh_perl_is
 #
 # Combination of run_perl() and is().
 #
@@ -593,7 +600,7 @@ sub fresh_perl_is {
 }
 
 #
-# run_perl_like
+# fresh_perl_like
 #
 # Combination of run_perl() and like().
 #

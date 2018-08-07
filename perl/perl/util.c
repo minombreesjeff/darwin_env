@@ -1,7 +1,7 @@
 /*    util.c
  *
  *    Copyright (C) 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -18,10 +18,7 @@
 #include "perl.h"
 
 #ifndef PERL_MICRO
-#if !defined(NSIG) || defined(M_UNIX) || defined(M_XENIX)
 #include <signal.h>
-#endif
-
 #ifndef SIG_ERR
 # define SIG_ERR ((Sighandler_t) -1)
 #endif
@@ -75,7 +72,9 @@ Perl_safesysmalloc(MEM_SIZE size)
     else if (PL_nomemok)
 	return Nullch;
     else {
-	PerlIO_puts(Perl_error_log,PL_no_mem) FLUSH;
+	/* Can't use PerlIO to write as it allocates memory */
+	PerlLIO_write(PerlIO_fileno(Perl_error_log),
+		      PL_no_mem, strlen(PL_no_mem));
 	my_exit(1);
 	return Nullch;
     }
@@ -122,7 +121,9 @@ Perl_safesysrealloc(Malloc_t where,MEM_SIZE size)
     else if (PL_nomemok)
 	return Nullch;
     else {
-	PerlIO_puts(Perl_error_log,PL_no_mem) FLUSH;
+	/* Can't use PerlIO to write as it allocates memory */
+	PerlLIO_write(PerlIO_fileno(Perl_error_log),
+		      PL_no_mem, strlen(PL_no_mem));
 	my_exit(1);
 	return Nullch;
     }
@@ -174,7 +175,9 @@ Perl_safesyscalloc(MEM_SIZE count, MEM_SIZE size)
     else if (PL_nomemok)
 	return Nullch;
     else {
-	PerlIO_puts(Perl_error_log,PL_no_mem) FLUSH;
+	/* Can't use PerlIO to write as it allocates memory */
+	PerlLIO_write(PerlIO_fileno(Perl_error_log),
+		      PL_no_mem, strlen(PL_no_mem));
 	my_exit(1);
 	return Nullch;
     }
@@ -1037,6 +1040,7 @@ Perl_vdie(pTHX_ const char* pat, va_list *args)
     CV *cv;
     SV *msv;
     STRLEN msglen;
+    I32 utf8 = 0;
 
     DEBUG_S(PerlIO_printf(Perl_debug_log,
 			  "%p: die: curstack = %p, mainstack = %p\n",
@@ -1051,6 +1055,7 @@ Perl_vdie(pTHX_ const char* pat, va_list *args)
 	}
 	else
 	    message = SvPV(msv,msglen);
+	utf8 = SvUTF8(msv);
     }
     else {
 	message = Nullch;
@@ -1076,6 +1081,7 @@ Perl_vdie(pTHX_ const char* pat, va_list *args)
 	    save_re_context();
 	    if (message) {
 		msg = newSVpvn(message, msglen);
+		SvFLAGS(msg) |= utf8;
 		SvREADONLY_on(msg);
 		SAVEFREESV(msg);
 	    }
@@ -1094,6 +1100,7 @@ Perl_vdie(pTHX_ const char* pat, va_list *args)
     }
 
     PL_restartop = die_where(message, msglen);
+    SvFLAGS(ERRSV) |= utf8;
     DEBUG_S(PerlIO_printf(Perl_debug_log,
 	  "%p: die: restartop = %p, was_in_eval = %d, top_env = %p\n",
 	  thr, PL_restartop, was_in_eval, PL_top_env));
@@ -1136,6 +1143,7 @@ Perl_vcroak(pTHX_ const char* pat, va_list *args)
     CV *cv;
     SV *msv;
     STRLEN msglen;
+    I32 utf8 = 0;
 
     if (pat) {
 	msv = vmess(pat, args);
@@ -1146,6 +1154,7 @@ Perl_vcroak(pTHX_ const char* pat, va_list *args)
 	}
 	else
 	    message = SvPV(msv,msglen);
+	utf8 = SvUTF8(msv);
     }
     else {
 	message = Nullch;
@@ -1171,6 +1180,7 @@ Perl_vcroak(pTHX_ const char* pat, va_list *args)
 	    save_re_context();
 	    if (message) {
 		msg = newSVpvn(message, msglen);
+		SvFLAGS(msg) |= utf8;
 		SvREADONLY_on(msg);
 		SAVEFREESV(msg);
 	    }
@@ -1189,6 +1199,7 @@ Perl_vcroak(pTHX_ const char* pat, va_list *args)
     }
     if (PL_in_eval) {
 	PL_restartop = die_where(message, msglen);
+	SvFLAGS(ERRSV) |= utf8;
 	JMPENV_JUMP(3);
     }
     else if (!message)
@@ -1217,8 +1228,9 @@ Perl_croak_nocontext(const char *pat, ...)
 =for apidoc croak
 
 This is the XSUB-writer's interface to Perl's C<die> function.
-Normally use this function the same way you use the C C<printf>
-function.  See C<warn>.
+Normally call this function the same way you call the C C<printf>
+function.  Calling C<croak> returns control directly to Perl,
+sidestepping the normal C order of execution. See C<warn>.
 
 If you want to throw an exception object, assign the object to
 C<$@> and then pass C<Nullch> to croak():
@@ -1249,8 +1261,10 @@ Perl_vwarn(pTHX_ const char* pat, va_list *args)
     CV *cv;
     SV *msv;
     STRLEN msglen;
+    I32 utf8 = 0;
 
     msv = vmess(pat, args);
+    utf8 = SvUTF8(msv);
     message = SvPV(msv, msglen);
 
     if (PL_warnhook) {
@@ -1268,6 +1282,7 @@ Perl_vwarn(pTHX_ const char* pat, va_list *args)
 	    ENTER;
 	    save_re_context();
 	    msg = newSVpvn(message, msglen);
+	    SvFLAGS(msg) |= utf8;
 	    SvREADONLY_on(msg);
 	    SAVEFREESV(msg);
 
@@ -1300,9 +1315,8 @@ Perl_warn_nocontext(const char *pat, ...)
 /*
 =for apidoc warn
 
-This is the XSUB-writer's interface to Perl's C<warn> function.  Use this
-function the same way you use the C C<printf> function.  See
-C<croak>.
+This is the XSUB-writer's interface to Perl's C<warn> function.  Call this
+function the same way you call the C C<printf> function.  See C<croak>.
 
 =cut
 */
@@ -1346,9 +1360,11 @@ Perl_vwarner(pTHX_ U32  err, const char* pat, va_list* args)
     CV *cv;
     SV *msv;
     STRLEN msglen;
+    I32 utf8 = 0;
 
     msv = vmess(pat, args);
     message = SvPV(msv, msglen);
+    utf8 = SvUTF8(msv);
 
     if (ckDEAD(err)) {
 #ifdef USE_5005THREADS
@@ -1369,6 +1385,7 @@ Perl_vwarner(pTHX_ U32  err, const char* pat, va_list* args)
 		ENTER;
 		save_re_context();
 		msg = newSVpvn(message, msglen);
+		SvFLAGS(msg) |= utf8;
 		SvREADONLY_on(msg);
 		SAVEFREESV(msg);
 
@@ -1383,6 +1400,7 @@ Perl_vwarner(pTHX_ U32  err, const char* pat, va_list* args)
 	}
 	if (PL_in_eval) {
 	    PL_restartop = die_where(message, msglen);
+	    SvFLAGS(ERRSV) |= utf8;
 	    JMPENV_JUMP(3);
 	}
 	write_to_stderr(message, msglen);
@@ -1404,6 +1422,7 @@ Perl_vwarner(pTHX_ U32  err, const char* pat, va_list* args)
 		ENTER;
 		save_re_context();
 		msg = newSVpvn(message, msglen);
+		SvFLAGS(msg) |= utf8;
 		SvREADONLY_on(msg);
 		SAVEFREESV(msg);
 
@@ -1523,6 +1542,7 @@ Perl_my_setenv(pTHX_ char *nam,char *val)
 
 #endif /* WIN32 || NETWARE */
 
+#ifndef PERL_MICRO
 I32
 Perl_setenv_getix(pTHX_ char *nam)
 {
@@ -1540,6 +1560,7 @@ Perl_setenv_getix(pTHX_ char *nam)
     }					/* potential SEGV's */
     return i;
 }
+#endif /* !PERL_MICRO */
 
 #endif /* !VMS && !EPOC*/
 
@@ -4376,7 +4397,6 @@ Perl_get_hash_seed(pTHX)
      {
 	  /* Compute a random seed */
 	  (void)seedDrand01((Rand_seed_t)seed());
-	  PL_srand_called = TRUE;
 	  myseed = (UV)(Drand01() * (NV)UV_MAX);
 #if RANDBITS < (UVSIZE * 8)
 	  /* Since there are not enough randbits to to reach all
@@ -4386,8 +4406,13 @@ Perl_get_hash_seed(pTHX)
 	  myseed +=
 	       (UV)(Drand01() * (NV)((1 << ((UVSIZE * 8 - RANDBITS))) - 1));
 #endif /* RANDBITS < (UVSIZE * 8) */
+	  if (myseed == 0) { /* Superparanoia. */
+	      myseed = (UV)(Drand01() * (NV)UV_MAX); /* One more chance. */
+	      if (myseed == 0)
+		  Perl_croak(aTHX_ "Your random numbers are not that random");
+	  }
      }
-     PL_hash_seed_set = TRUE;
+     PL_rehash_seed_set = TRUE;
 
      return myseed;
 }

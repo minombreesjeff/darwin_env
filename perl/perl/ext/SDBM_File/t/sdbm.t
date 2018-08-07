@@ -6,8 +6,8 @@ BEGIN {
     chdir 't' if -d 't';
     @INC = '../lib';
     require Config; import Config;
-    if (($Config{'extensions'} !~ /\bSDBM_File\b/) && ($^O ne 'VMS')){
-	print "1..0\n";
+    if ($Config{'extensions'} !~ /\bSDBM_File\b/) {
+	print "1..0 # Skip: no SDBM_File\n";
 	exit 0;
     }
 }

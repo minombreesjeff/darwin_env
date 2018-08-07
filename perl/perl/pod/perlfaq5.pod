@@ -1,6 +1,6 @@
 =head1 NAME
 
-perlfaq5 - Files and Formats ($Revision: 1.28 $, $Date: 2003/01/26 17:45:46 $)
+perlfaq5 - Files and Formats ($Revision: 1.30 $, $Date: 2003/11/23 08:07:46 $)
 
 =head1 DESCRIPTION
 
@@ -141,6 +141,7 @@ temporary files in one process, use a counter:
 	    my $count = 0;
 	    until (defined(fileno(FH)) || $count++ > 100) {
 		$base_name =~ s/-(\d+)$/"-" . (1 + $1)/e;
+		# O_EXCL is required for security reasons.
 		sysopen(FH, $base_name, O_WRONLY|O_EXCL|O_CREAT);
 	    }
 	    if (defined(fileno(FH))
@@ -153,8 +154,10 @@ temporary files in one process, use a counter:
 
 =head2 How can I manipulate fixed-record-length files?
 
-The most efficient way is using pack() and unpack().  This is faster than
-using substr() when taking many, many strings.  It is slower for just a few.
+The most efficient way is using L<pack()|perlfunc/"pack"> and
+L<unpack()|perlfunc/"unpack">.  This is faster than using
+L<substr()|perlfunc/"substr"> when taking many, many strings.  It is
+slower for just a few.
 
 Here is a sample chunk of code to break up and put back together again
 some fixed-format input lines, in this case from the output of a normal,
@@ -162,22 +165,23 @@ Berkeley-style ps:
 
     # sample input line:
     #   15158 p5  T      0:00 perl /home/tchrist/scripts/now-what
-    $PS_T = 'A6 A4 A7 A5 A*';
-    open(PS, "ps|");
-    print scalar <PS>;
-    while (<PS>) {
-	($pid, $tt, $stat, $time, $command) = unpack($PS_T, $_);
-	for $var (qw!pid tt stat time command!) {
-	    print "$var: <$$var>\n";
+    my $PS_T = 'A6 A4 A7 A5 A*';
+    open my $ps, '-|', 'ps';
+    print scalar <$ps>;
+    my @fields = qw( pid tt stat time command );
+    while (<$ps>) {
+        my %process;
+        @process{@fields} = unpack($PS_T, $_);
+	for my $field ( @fields ) {
+	    print "$field: <$process{$field}>\n";
 	}
-	print 'line=', pack($PS_T, $pid, $tt, $stat, $time, $command),
-		"\n";
+	print 'line=', pack($PS_T, @process{@fields} ), "\n";
     }
 
-We've used C<$$var> in a way that forbidden by C<use strict 'refs'>.
-That is, we've promoted a string to a scalar variable reference using
-symbolic references.  This is okay in small programs, but doesn't scale
-well.   It also only works on global variables, not lexicals.
+We've used a hash slice in order to easily handle the fields of each row.
+Storing the keys in an array means it's easy to operate on them as a
+group or loop over them with for. It also avoids polluting the program
+with global variables and using symbolic references.
 
 =head2 How can I make a filehandle local to a subroutine?  How do I pass filehandles between subroutines?  How do I make an array of filehandles?
 
@@ -424,8 +428,8 @@ To open file for update, file must not exist:
 
 To open a file without blocking, creating if necessary:
 
-    sysopen(FH, "/tmp/somefile", O_WRONLY|O_NDELAY|O_CREAT)
-	    or die "can't open /tmp/somefile: $!":
+    sysopen(FH, "/foo/somefile", O_WRONLY|O_NDELAY|O_CREAT)
+	    or die "can't open /foo/somefile: $!":
 
 Be warned that neither creation nor deletion of files is guaranteed to
 be an atomic operation over NFS.  That is, two processes might both
@@ -549,7 +553,7 @@ which must be done in one.  That's why computer hardware provides an
 atomic test-and-set instruction.   In theory, this "ought" to work:
 
     sysopen(FH, "file.lock", O_WRONLY|O_EXCL|O_CREAT)
-		or die "can't open  file.lock: $!":
+		or die "can't open  file.lock: $!";
 
 except that lamentably, file creation (and deletion) is not atomic
 over NFS, so this won't work (at least, not every time) over the net.
@@ -921,7 +925,7 @@ There's also a File::Tail module from CPAN.
 If you check L<perlfunc/open>, you'll see that several of the ways
 to call open() should do the trick.  For example:
 
-    open(LOG, ">>/tmp/logfile");
+    open(LOG, ">>/foo/logfile");
     open(STDERR, ">&LOG");
 
 Or even with a literal numeric descriptor:

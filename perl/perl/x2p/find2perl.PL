@@ -80,6 +80,7 @@ my $out = '';
 my $declaresubs = "sub wanted;\n";
 my %init = ();
 my ($follow_in_effect,$Skip_And) = (0,0);
+my $print_needed = 1;
 
 while (@ARGV) {
     $_ = shift;
@@ -117,8 +118,10 @@ while (@ARGV) {
         $out .= tab . "-$filetest _";
     } elsif ($_ eq 'print') {
         $out .= tab . 'print("$name\n")';
+	$print_needed = 0;
     } elsif ($_ eq 'print0') {
         $out .= tab . 'print("$name\0")';
+	$print_needed = 0;
     } elsif ($_ eq 'fstype') {
         my $type = shift;
         $out .= tab;
@@ -183,6 +186,7 @@ while (@ARGV) {
             $declaresubs .= "sub doexec (\$\@);\n";
             $init{doexec} = 1;
         }
+	$print_needed = 0;
     } elsif ($_ eq 'ok') {
         my @cmd = ();
         while (@ARGV && $ARGV[0] ne ';')
@@ -194,6 +198,7 @@ while (@ARGV) {
         { local $" = "','"; $out .= "doexec(1, '@cmd')"; }
         $declaresubs .= "sub doexec (\$\@);\n";
         $init{doexec} = 1;
+	$print_needed = 0;
     } elsif ($_ eq 'prune') {
         $out .= tab . '($File::Find::prune = 1)';
     } elsif ($_ eq 'xdev') {
@@ -217,6 +222,7 @@ while (@ARGV) {
         $out .= tab . "ls";
         $declaresubs .= "sub ls ();\n";
         $init{ls} = 1;
+	$print_needed = 0;
     } elsif ($_ eq 'tar') {
         die "-tar must have a filename argument\n" unless @ARGV;
         my $file = shift;
@@ -258,6 +264,10 @@ while (@ARGV) {
     }
 }
 
+if ($print_needed) {
+    $out .= "\n" . tab . '&& print("$name\n")';
+}
+
 
 print <<"END";
 $startperl
@@ -279,6 +289,14 @@ use vars qw/*name *dir *prune/;
 $declaresubs
 
 END
+
+if (exists $init{doexec}) {
+    print <<'END';
+use Cwd ();
+my $cwd = Cwd::cwd();
+
+END
+}  
 
 if (exists $init{ls}) {
     print <<'END';
@@ -347,9 +365,6 @@ END
 
 if (exists $init{doexec}) {
     print <<'END';
-
-use Cwd ();
-my $cwd = Cwd::cwd();
 
 sub doexec ($@) {
     my $ok = shift;
@@ -833,7 +848,9 @@ True if last-modified time of file matches N.
 
 =item C<-print>
 
-Print out path of file (always true).
+Print out path of file (always true). If none of C<-exec>, C<-ls>,
+C<-print0>, or C<-ok> is specified, then C<-print> will be added
+implicitly.
 
 =item C<-print0>
 

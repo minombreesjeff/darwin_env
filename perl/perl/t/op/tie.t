@@ -360,3 +360,184 @@ $s=~ s/\(0x\w+\)//g;
 print $s, "\n";
 EXPECT
 SCALAR SCALAR SCALAR SCALAR
+########
+# [perl #23287] segfault in untie
+sub TIESCALAR { bless $_[1], $_[0] }
+my $var;
+tie $var, 'main', \$var;
+untie $var;
+EXPECT
+########
+# Test case from perlmonks by runrig
+# http://www.perlmonks.org/index.pl?node_id=273490
+# "Here is what I tried. I think its similar to what you've tried
+#  above. Its odd but convienient that after untie'ing you are left with
+#  a variable that has the same value as was last returned from
+#  FETCH. (At least on my perl v5.6.1). So you don't need to pass a
+#  reference to the variable in order to set it after the untie (here it
+#  is accessed through a closure)."
+use strict;
+use warnings;
+package MyTied;
+sub TIESCALAR {
+    my ($class,$code) = @_;
+    bless $code, $class;
+}
+sub FETCH {
+    my $self = shift;
+    print "Untie\n";
+    $self->();
+}
+package main;
+my $var;
+tie $var, 'MyTied', sub { untie $var; 4 };
+print "One\n";
+print "$var\n";
+print "Two\n";
+print "$var\n";
+print "Three\n";
+print "$var\n";
+EXPECT
+One
+Untie
+4
+Two
+4
+Three
+4
+########
+# [perl #22297] cannot untie scalar from within tied FETCH
+my $counter = 0;
+my $x = 7;
+my $ref = \$x;
+tie $x, 'Overlay', $ref, $x;
+my $y;
+$y = $x;
+$y = $x;
+$y = $x;
+$y = $x;
+#print "WILL EXTERNAL UNTIE $ref\n";
+untie $$ref;
+$y = $x;
+$y = $x;
+$y = $x;
+$y = $x;
+#print "counter = $counter\n";
+
+print (($counter == 1) ? "ok\n" : "not ok\n");
+
+package Overlay;
+
+sub TIESCALAR
+{
+        my $pkg = shift;
+        my ($ref, $val) = @_;
+        return bless [ $ref, $val ], $pkg;
+}
+
+sub FETCH
+{
+        my $self = shift;
+        my ($ref, $val) = @$self;
+        #print "WILL INTERNAL UNITE $ref\n";
+        $counter++;
+        untie $$ref;
+        return $val;
+}
+EXPECT
+ok
+########
+
+# test SCALAR method
+package TieScalar;
+
+sub TIEHASH {
+    my $pkg = shift;
+    bless { } => $pkg;
+}
+
+sub STORE {
+    $_[0]->{$_[1]} = $_[2];
+}
+
+sub FETCH {
+    $_[0]->{$_[1]}
+}
+
+sub CLEAR {
+    %{ $_[0] } = ();
+}
+
+sub SCALAR {
+    print "SCALAR\n";
+    return 0 if ! keys %{$_[0]};
+    sprintf "%i/%i", scalar keys %{$_[0]}, scalar keys %{$_[0]};
+}
+
+package main;
+tie my %h => "TieScalar";
+$h{key1} = "val1";
+$h{key2} = "val2";
+print scalar %h, "\n";
+%h = ();
+print scalar %h, "\n";
+EXPECT
+SCALAR
+2/2
+SCALAR
+0
+########
+
+# test scalar on tied hash when no SCALAR method has been given
+package TieScalar;
+
+sub TIEHASH {
+    my $pkg = shift;
+    bless { } => $pkg;
+}
+sub STORE {
+    $_[0]->{$_[1]} = $_[2];
+}
+sub FETCH {
+    $_[0]->{$_[1]}
+}
+sub CLEAR {
+    %{ $_[0] } = ();
+}
+sub FIRSTKEY {
+    my $a = keys %{ $_[0] };
+    print "FIRSTKEY\n";
+    each %{ $_[0] };
+}
+
+package main;
+tie my %h => "TieScalar";
+
+if (!%h) {
+    print "empty\n";
+} else {
+    print "not empty\n";
+}
+
+$h{key1} = "val1";
+print "not empty\n" if %h;
+print "not empty\n" if %h;
+print "-->\n";
+my ($k,$v) = each %h;
+print "<--\n";
+print "not empty\n" if %h;
+%h = ();
+print "empty\n" if ! %h;
+EXPECT
+FIRSTKEY
+empty
+FIRSTKEY
+not empty
+FIRSTKEY
+not empty
+-->
+FIRSTKEY
+<--
+not empty
+FIRSTKEY
+empty

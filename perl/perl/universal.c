@@ -1,6 +1,6 @@
 /*    universal.c
  *
- *    Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003,
+ *    Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
  *    by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
@@ -180,6 +180,9 @@ XS(XS_Internals_SvREFCNT);
 XS(XS_Internals_hv_clear_placehold);
 XS(XS_PerlIO_get_layers);
 XS(XS_Regexp_DESTROY);
+XS(XS_Internals_hash_seed);
+XS(XS_Internals_rehash_seed);
+XS(XS_Internals_HvREHASH);
 
 void
 Perl_boot_core_UNIVERSAL(pTHX)
@@ -204,6 +207,9 @@ Perl_boot_core_UNIVERSAL(pTHX)
     newXSproto("PerlIO::get_layers",
                XS_PerlIO_get_layers, file, "*;@");
     newXS("Regexp::DESTROY", XS_Regexp_DESTROY, file);
+    newXSproto("Internals::hash_seed",XS_Internals_hash_seed, file, "");
+    newXSproto("Internals::rehash_seed",XS_Internals_rehash_seed, file, "");
+    newXSproto("Internals::HvREHASH", XS_Internals_HvREHASH, file, "\\%");
 }
 
 
@@ -536,53 +542,13 @@ XS(XS_Internals_SvREFCNT)	/* This is dangerous stuff. */
     XSRETURN_UNDEF; /* Can't happen. */
 }
 
-/* Maybe this should return the number of placeholders found in scalar context,
-   and a list of them in list context.  */
 XS(XS_Internals_hv_clear_placehold)
 {
     dXSARGS;
     HV *hv = (HV *) SvRV(ST(0));
-
-    /* I don't care how many parameters were passed in, but I want to avoid
-       the unused variable warning. */
-
-    items = (I32)HvPLACEHOLDERS(hv);
-
-    if (items) {
-        HE *entry;
-        I32 riter = HvRITER(hv);
-        HE *eiter = HvEITER(hv);
-        hv_iterinit(hv);
-        /* This may look suboptimal with the items *after* the iternext, but
-           it's quite deliberate. We only get here with items==0 if we've
-           just deleted the last placeholder in the hash. If we've just done
-           that then it means that the hash is in lazy delete mode, and the
-           HE is now only referenced in our iterator. If we just quit the loop
-           and discarded our iterator then the HE leaks. So we do the && the
-           other way to ensure iternext is called just one more time, which
-           has the side effect of triggering the lazy delete.  */
-        while ((entry = hv_iternext_flags(hv, HV_ITERNEXT_WANTPLACEHOLDERS))
-            && items) {
-            SV *val = hv_iterval(hv, entry);
-
-            if (val == &PL_sv_placeholder) {
-
-                /* It seems that I have to go back in the front of the hash
-                   API to delete a hash, even though I have a HE structure
-                   pointing to the very entry I want to delete, and could hold
-                   onto the previous HE that points to it. And it's easier to
-                   go in with SVs as I can then specify the precomputed hash,
-                   and don't have fun and games with utf8 keys.  */
-                SV *key = hv_iterkeysv(entry);
-
-                hv_delete_ent (hv, key, G_DISCARD, HeHASH(entry));
-                items--;
-            }
-        }
-        HvRITER(hv) = riter;
-        HvEITER(hv) = eiter;
-    }
-
+    if (items != 1)
+	Perl_croak(aTHX_ "Usage: UNIVERSAL::hv_clear_placeholders(hv)");
+    hv_clear_placeholders(hv);
     XSRETURN(0);
 }
 
@@ -716,3 +682,33 @@ XS(XS_PerlIO_get_layers)
     XSRETURN(0);
 }
 
+XS(XS_Internals_hash_seed)
+{
+    /* Using dXSARGS would also have dITEM and dSP,
+     * which define 2 unused local variables.  */
+    dMARK; dAX;
+    XSRETURN_UV(PERL_HASH_SEED);
+}
+
+XS(XS_Internals_rehash_seed)
+{
+    /* Using dXSARGS would also have dITEM and dSP,
+     * which define 2 unused local variables.  */
+    dMARK; dAX;
+    XSRETURN_UV(PL_rehash_seed);
+}
+
+XS(XS_Internals_HvREHASH)	/* Subject to change  */
+{
+    dXSARGS;
+    if (SvROK(ST(0))) {
+	HV *hv = (HV *) SvRV(ST(0));
+	if (items == 1 && SvTYPE(hv) == SVt_PVHV) {
+	    if (HvREHASH(hv))
+		XSRETURN_YES;
+	    else
+		XSRETURN_NO;
+	}
+    }
+    Perl_croak(aTHX_ "Internals::HvREHASH $hashref");
+}

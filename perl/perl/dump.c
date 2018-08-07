@@ -1,7 +1,7 @@
 /*    dump.c
  *
  *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -116,19 +116,17 @@ Perl_pv_display(pTHX_ SV *dsv, char *pv, STRLEN cur, STRLEN len, STRLEN pvlim)
             truncated++;
 	    break;
         }
-        if (isPRINT(*pv)) {
-            switch (*pv) {
-	    case '\t': sv_catpvn(dsv, "\\t", 2);  break;
-	    case '\n': sv_catpvn(dsv, "\\n", 2);  break;
-	    case '\r': sv_catpvn(dsv, "\\r", 2);  break;
-	    case '\f': sv_catpvn(dsv, "\\f", 2);  break;
-	    case '"':  sv_catpvn(dsv, "\\\"", 2); break;
-	    case '\\': sv_catpvn(dsv, "\\\\", 2); break;
-	    default:   sv_catpvn(dsv, pv, 1);     break;
-            }
-        }
-	else {
-	    if (cur && isDIGIT(*(pv+1)))
+	switch (*pv) {
+	case '\t': sv_catpvn(dsv, "\\t", 2);  break;
+	case '\n': sv_catpvn(dsv, "\\n", 2);  break;
+	case '\r': sv_catpvn(dsv, "\\r", 2);  break;
+	case '\f': sv_catpvn(dsv, "\\f", 2);  break;
+	case '"':  sv_catpvn(dsv, "\\\"", 2); break;
+	case '\\': sv_catpvn(dsv, "\\\\", 2); break;
+	default:
+	    if (isPRINT(*pv))
+		sv_catpvn(dsv, pv, 1);
+	    else if (cur && isDIGIT(*(pv+1)))
 		Perl_sv_catpvf(aTHX_ dsv, "\\%03o", (U8)*pv);
 	    else
 		Perl_sv_catpvf(aTHX_ dsv, "\\%o", (U8)*pv);
@@ -644,22 +642,28 @@ Perl_do_op_dump(pTHX_ I32 level, PerlIO *file, OP *o)
 #ifdef USE_ITHREADS
 	Perl_dump_indent(aTHX_ level, file, "PADIX = %" IVdf "\n", (IV)cPADOPo->op_padix);
 #else
-	if (cSVOPo->op_sv) {
-	    SV *tmpsv = NEWSV(0,0);
-	    STRLEN n_a;
-	    ENTER;
-	    SAVEFREESV(tmpsv);
-	    gv_fullname3(tmpsv, (GV*)cSVOPo->op_sv, Nullch);
-	    Perl_dump_indent(aTHX_ level, file, "GV = %s\n", SvPV(tmpsv, n_a));
-	    LEAVE;
+	if ( ! PL_op->op_flags & OPf_SPECIAL) { /* not lexical */
+	    if (cSVOPo->op_sv) {
+		SV *tmpsv = NEWSV(0,0);
+		STRLEN n_a;
+		ENTER;
+		SAVEFREESV(tmpsv);
+		gv_fullname3(tmpsv, (GV*)cSVOPo->op_sv, Nullch);
+		Perl_dump_indent(aTHX_ level, file, "GV = %s\n", SvPV(tmpsv, n_a));
+		LEAVE;
+	    }
+	    else
+		Perl_dump_indent(aTHX_ level, file, "GV = NULL\n");
 	}
-	else
-	    Perl_dump_indent(aTHX_ level, file, "GV = NULL\n");
 #endif
 	break;
     case OP_CONST:
     case OP_METHOD_NAMED:
+#ifndef USE_ITHREADS
+	/* with ITHREADS, consts are stored in the pad, and the right pad
+	 * may not be active here, so skip */
 	Perl_dump_indent(aTHX_ level, file, "SV = %s\n", SvPEEK(cSVOPo_sv));
+#endif
 	break;
     case OP_SETSTATE:
     case OP_NEXTSTATE:
@@ -1005,7 +1009,8 @@ Perl_do_sv_dump(pTHX_ I32 level, PerlIO *file, SV *sv, I32 nest, I32 maxnest, bo
     if (flags & SVf_FAKE)	sv_catpv(d, "FAKE,");
     if (flags & SVf_READONLY)	sv_catpv(d, "READONLY,");
 
-    if (flags & SVf_AMAGIC)	sv_catpv(d, "OVERLOAD,");
+    if (flags & SVf_AMAGIC && type != SVt_PVHV)
+				sv_catpv(d, "OVERLOAD,");
     if (flags & SVp_IOK)	sv_catpv(d, "pIOK,");
     if (flags & SVp_NOK)	sv_catpv(d, "pNOK,");
     if (flags & SVp_POK)	sv_catpv(d, "pPOK,");
@@ -1030,6 +1035,7 @@ Perl_do_sv_dump(pTHX_ I32 level, PerlIO *file, SV *sv, I32 nest, I32 maxnest, bo
 	if (HvSHAREKEYS(sv))	sv_catpv(d, "SHAREKEYS,");
 	if (HvLAZYDEL(sv))	sv_catpv(d, "LAZYDEL,");
 	if (HvHASKFLAGS(sv))	sv_catpv(d, "HASKFLAGS,");
+	if (HvREHASH(sv))	sv_catpv(d, "REHASH,");
 	break;
     case SVt_PVGV:
 	if (GvINTRO(sv))	sv_catpv(d, "INTRO,");
@@ -1299,6 +1305,8 @@ Perl_do_sv_dump(pTHX_ I32 level, PerlIO *file, SV *sv, I32 nest, I32 maxnest, bo
 		Perl_dump_indent(aTHX_ level+1, file, "Elt %s ", pv_display(d, keypv, len, 0, pvlim));
 		if (SvUTF8(keysv))
 		    PerlIO_printf(file, "[UTF8 \"%s\"] ", sv_uni_display(d, keysv, 8 * sv_len_utf8(keysv), UNI_DISPLAY_QQ));
+		if (HeKREHASH(he))
+		    PerlIO_printf(file, "[REHASH] ");
 		PerlIO_printf(file, "HASH = 0x%"UVxf"\n", (UV)hash);
 		do_sv_dump(level+1, file, elt, nest+1, maxnest, dumpops, pvlim);
 	    }

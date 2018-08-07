@@ -1,6 +1,6 @@
 =head1 NAME
 
-perlfaq4 - Data Manipulation ($Revision: 1.44 $, $Date: 2003/07/28 17:35:21 $)
+perlfaq4 - Data Manipulation ($Revision: 1.54 $, $Date: 2003/11/30 00:50:08 $)
 
 =head1 DESCRIPTION
 
@@ -27,6 +27,24 @@ L<"Floating Point Arithmetic"|perlop> for more details.
 	printf "%.2f", 10/3;
 
 	my $number = sprintf "%.2f", 10/3;
+
+=head2 Why is int() broken?
+
+Your int() is most probably working just fine.  It's the numbers that
+aren't quite what you think.
+
+First, see the above item "Why am I getting long decimals
+(eg, 19.9499999999999) instead of the numbers I should be getting
+(eg, 19.95)?".
+
+For example, this
+
+    print int(0.6/0.2-2), "\n";
+
+will in most computers print 0, not 1, because even such simple
+numbers as 0.6 and 0.2 cannot be presented exactly by floating-point
+numbers.  What you think in the above as 'three' is really more like
+2.9999999999999995559.
 
 =head2 Why isn't my octal data interpreted correctly?
 
@@ -102,7 +120,7 @@ Perl numbers whose absolute values are integers under 2**31 (on 32 bit
 machines) will work pretty much like mathematical integers.  Other numbers
 are not guaranteed.
 
-=head2 How do I convert between numeric representations?
+=head2 How do I convert between numeric representations/bases/radixes?
 
 As always with Perl there is more than one way to do it.  Below
 are a few examples of approaches to making common conversions
@@ -121,18 +139,15 @@ programmers the notation might be familiar.
 
 Using perl's built in conversion of 0x notation:
 
-    $int = 0xDEADBEEF;
-    $dec = sprintf("%d", $int);
+    $dec = 0xDEADBEEF;
 
 Using the hex function:
 
-    $int = hex("DEADBEEF");
-    $dec = sprintf("%d", $int);
+    $dec = hex("DEADBEEF");
 
 Using pack:
 
-    $int = unpack("N", pack("H8", substr("0" x 8 . "DEADBEEF", -8)));
-    $dec = sprintf("%d", $int);
+    $dec = unpack("N", pack("H8", substr("0" x 8 . "DEADBEEF", -8)));
 
 Using the CPAN module Bit::Vector:
 
@@ -144,13 +159,14 @@ Using the CPAN module Bit::Vector:
 
 Using sprintf:
 
-    $hex = sprintf("%X", 3735928559);
+    $hex = sprintf("%X", 3735928559); # upper case A-F
+    $hex = sprintf("%x", 3735928559); # lower case a-f
 
-Using unpack
+Using unpack:
 
     $hex = unpack("H*", pack("N", 3735928559));
 
-Using Bit::Vector
+Using Bit::Vector:
 
     use Bit::Vector;
     $vec = Bit::Vector->new_Dec(32, -559038737);
@@ -167,13 +183,11 @@ And Bit::Vector supports odd bit counts:
 
 Using Perl's built in conversion of numbers with leading zeros:
 
-    $int = 033653337357; # note the leading 0!
-    $dec = sprintf("%d", $int);
+    $dec = 033653337357; # note the leading 0!
 
 Using the oct function:
 
-    $int = oct("33653337357");
-    $dec = sprintf("%d", $int);
+    $dec = oct("33653337357");
 
 Using Bit::Vector:
 
@@ -188,7 +202,7 @@ Using sprintf:
 
     $oct = sprintf("%o", 3735928559);
 
-Using Bit::Vector
+Using Bit::Vector:
 
     use Bit::Vector;
     $vec = Bit::Vector->new_Dec(32, -559038737);
@@ -199,13 +213,18 @@ Using Bit::Vector
 Perl 5.6 lets you write binary numbers directly with
 the 0b notation:
 
-	$number = 0b10110110;
+    $number = 0b10110110;
 
-Using pack and ord
+Using oct:
+
+    my $input = "10110110";
+    $decimal = oct( "0b$input" );
+
+Using pack and ord:
 
     $decimal = ord(pack('B8', '10110110'));
 
-Using pack and unpack for larger strings
+Using pack and unpack for larger strings:
 
     $int = unpack("N", pack("B32",
 	substr("0" x 32 . "11110101011011011111011101111", -32)));
@@ -220,7 +239,11 @@ Using Bit::Vector:
 
 =item How do I convert from decimal to binary
 
-Using unpack;
+Using sprintf (perl 5.6+):
+
+    $bin = sprintf("%b", 3735928559);
+
+Using unpack:
 
     $bin = unpack("B*", pack("N", 3735928559));
 
@@ -339,9 +362,20 @@ pseudorandom generator than comes with your operating system, look at
 
 =head2 How do I get a random number between X and Y?
 
-Use the following simple function.  It selects a random integer between
-(and possibly including!) the two given integers, e.g.,
-C<random_int_in(50,120)>
+C<rand($x)> returns a number such that
+C<< 0 <= rand($x) < $x >>. Thus what you want to have perl
+figure out is a random number in the range from 0 to the
+difference between your I<X> and I<Y>.
+
+That is, to get a number between 10 and 15, inclusive, you
+want a random number between 0 and 5 that you can then add
+to 10.
+
+    my $number = 10 + int rand( 15-10+1 );
+
+Hence you derive the following simple function to abstract
+that. It selects a random integer between the two given
+integers (inclusive), For example: C<random_int_in(50,120)>.
 
    sub random_int_in ($$) {
      my($min, $max) = @_;
@@ -359,7 +393,7 @@ The localtime function returns the day of the week.  Without an
 argument localtime uses the current time.
 
     $day_of_year = (localtime)[7];
-    
+
 The POSIX module can also format a date as the day of the year or
 week of the year.
 
@@ -369,7 +403,7 @@ week of the year.
 
 To get the day of year for any date, use the Time::Local module to get
 a time in epoch seconds for the argument to localtime.
-	
+
 	use POSIX qw/strftime/;
 	use Time::Local;
 	my $week_of_year = strftime "%W", 
@@ -380,7 +414,7 @@ The Date::Calc module provides two functions for to calculate these.
 	use Date::Calc;
 	my $day_of_year  = Day_of_Year(  1987, 12, 18 );
 	my $week_of_year = Week_of_Year( 1987, 12, 18 );
-	
+
 =head2 How do I find the current century or millennium?
 
 Use the following simple functions:
@@ -391,14 +425,6 @@ Use the following simple functions:
     sub get_millennium {
 	return 1+int((((localtime(shift || time))[5] + 1899))/1000);
     }
-
-You can also use the POSIX strftime() function which may be a bit
-slower but is easier to read and maintain.
-
-	use POSIX qw/strftime/;
-
-	my $week_of_the_year = strftime "%W", localtime;
-	my $day_of_the_year  = strftime "%j", localtime;
 
 On some systems, the POSIX module's strftime() function has
 been extended in a non-standard way to use a C<%C> format,
@@ -1466,16 +1492,11 @@ the hash is to be modified.
 
 Use the rand() function (see L<perlfunc/rand>):
 
-    # at the top of the program:
-    srand;			# not needed for 5.004 and later
-
-    # then later on
     $index   = rand @array;
     $element = $array[$index];
 
-Make sure you I<only call srand once per program, if then>.
-If you are calling it more than once (such as before each
-call to rand), you're almost certainly doing something wrong.
+Or, simply:
+    my $element = $array[ rand @array ];
 
 =head2 How do I permute N elements of a list?
 
@@ -1563,7 +1584,7 @@ If you need to sort on several fields, the following paradigm is useful.
 This can be conveniently combined with precalculation of keys as given
 above.
 
-See the F<sort> artitcle article in the "Far More Than You Ever Wanted
+See the F<sort> article in the "Far More Than You Ever Wanted
 To Know" collection in http://www.cpan.org/misc/olddoc/FMTEYEWTK.tgz for
 more about this approach.
 
@@ -1985,13 +2006,17 @@ Assuming that you don't care about IEEE notations like "NaN" or
    if (/^([+-]?)(?=\d|\.\d)\d*(\.\d*)?([Ee]([+-]?\d+))?$/)
 			{ print "a C float\n" }
 
-You can also use the L<Data::Types|Data::Types> module on
-the CPAN, which exports functions that validate data types
-using these and other regular expressions, or you can use
-the C<Regexp::Common> module from CPAN which has regular
-expressions to match various types of numbers.
+There are also some commonly used modules for the task.
+L<Scalar::Util> (distributed with 5.8) provides access to perl's
+internal function C<looks_like_number> for determining
+whether a variable looks like a number.  L<Data::Types>
+exports functions that validate data types using both the
+above and other regular expressions. Thirdly, there is
+C<Regexp::Common> which has regular expressions to match
+various types of numbers. Those three modules are available
+from the CPAN.
 
-If you're on a POSIX system, Perl's supports the C<POSIX::strtod>
+If you're on a POSIX system, Perl supports the C<POSIX::strtod>
 function.  Its semantics are somewhat cumbersome, so here's a C<getnum>
 wrapper function for more convenient access.  This function takes
 a string and returns the number it found, or C<undef> for input that
@@ -2014,7 +2039,7 @@ if you just want to say, ``Is this a float?''
 
     sub is_numeric { defined getnum($_[0]) }
 
-Or you could check out the L<String::Scanf|String::Scanf> module on the CPAN
+Or you could check out the L<String::Scanf> module on the CPAN
 instead. The POSIX module (part of the standard Perl distribution) provides
 the C<strtod> and C<strtol> for converting strings to double and longs,
 respectively.
@@ -2037,8 +2062,9 @@ and C<retrieve> functions:
 =head2 How do I print out or copy a recursive data structure?
 
 The Data::Dumper module on CPAN (or the 5.005 release of Perl) is great
-for printing out data structures.  The Storable module, found on CPAN,
-provides a function called C<dclone> that recursively copies its argument.
+for printing out data structures.  The Storable module on CPAN (or the
+5.8 release of Perl), provides a function called C<dclone> that recursively
+copies its argument.
 
     use Storable qw(dclone);
     $r2 = dclone($r1);

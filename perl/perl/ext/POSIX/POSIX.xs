@@ -61,7 +61,9 @@
 #ifdef I_STDLIB
 #include <stdlib.h>
 #endif
+#ifndef __ultrix__
 #include <string.h>
+#endif
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
@@ -840,10 +842,12 @@ int_macro_int(sv, iv)
 
 int
 isalnum(charstring)
-	unsigned char *	charstring
+	SV *	charstring
+    PREINIT:
+	STRLEN	len;
     CODE:
-	unsigned char *s = charstring;
-	unsigned char *e = s + SvCUR(ST(0));
+	unsigned char *s = (unsigned char *) SvPV(charstring, len);
+	unsigned char *e = s + len;
 	for (RETVAL = 1; RETVAL && s < e; s++)
 	    if (!isalnum(*s))
 		RETVAL = 0;
@@ -852,10 +856,12 @@ isalnum(charstring)
 
 int
 isalpha(charstring)
-	unsigned char *	charstring
+	SV *	charstring
+    PREINIT:
+	STRLEN	len;
     CODE:
-	unsigned char *s = charstring;
-	unsigned char *e = s + SvCUR(ST(0));
+	unsigned char *s = (unsigned char *) SvPV(charstring, len);
+	unsigned char *e = s + len;
 	for (RETVAL = 1; RETVAL && s < e; s++)
 	    if (!isalpha(*s))
 		RETVAL = 0;
@@ -864,10 +870,12 @@ isalpha(charstring)
 
 int
 iscntrl(charstring)
-	unsigned char *	charstring
+	SV *	charstring
+    PREINIT:
+	STRLEN	len;
     CODE:
-	unsigned char *s = charstring;
-	unsigned char *e = s + SvCUR(ST(0));
+	unsigned char *s = (unsigned char *) SvPV(charstring, len);
+	unsigned char *e = s + len;
 	for (RETVAL = 1; RETVAL && s < e; s++)
 	    if (!iscntrl(*s))
 		RETVAL = 0;
@@ -876,10 +884,12 @@ iscntrl(charstring)
 
 int
 isdigit(charstring)
-	unsigned char *	charstring
+	SV *	charstring
+    PREINIT:
+	STRLEN	len;
     CODE:
-	unsigned char *s = charstring;
-	unsigned char *e = s + SvCUR(ST(0));
+	unsigned char *s = (unsigned char *) SvPV(charstring, len);
+	unsigned char *e = s + len;
 	for (RETVAL = 1; RETVAL && s < e; s++)
 	    if (!isdigit(*s))
 		RETVAL = 0;
@@ -888,10 +898,12 @@ isdigit(charstring)
 
 int
 isgraph(charstring)
-	unsigned char *	charstring
+	SV *	charstring
+    PREINIT:
+	STRLEN	len;
     CODE:
-	unsigned char *s = charstring;
-	unsigned char *e = s + SvCUR(ST(0));
+	unsigned char *s = (unsigned char *) SvPV(charstring, len);
+	unsigned char *e = s + len;
 	for (RETVAL = 1; RETVAL && s < e; s++)
 	    if (!isgraph(*s))
 		RETVAL = 0;
@@ -900,10 +912,12 @@ isgraph(charstring)
 
 int
 islower(charstring)
-	unsigned char *	charstring
+	SV *	charstring
+    PREINIT:
+	STRLEN	len;
     CODE:
-	unsigned char *s = charstring;
-	unsigned char *e = s + SvCUR(ST(0));
+	unsigned char *s = (unsigned char *) SvPV(charstring, len);
+	unsigned char *e = s + len;
 	for (RETVAL = 1; RETVAL && s < e; s++)
 	    if (!islower(*s))
 		RETVAL = 0;
@@ -912,10 +926,12 @@ islower(charstring)
 
 int
 isprint(charstring)
-	unsigned char *	charstring
+	SV *	charstring
+    PREINIT:
+	STRLEN	len;
     CODE:
-	unsigned char *s = charstring;
-	unsigned char *e = s + SvCUR(ST(0));
+	unsigned char *s = (unsigned char *) SvPV(charstring, len);
+	unsigned char *e = s + len;
 	for (RETVAL = 1; RETVAL && s < e; s++)
 	    if (!isprint(*s))
 		RETVAL = 0;
@@ -924,10 +940,12 @@ isprint(charstring)
 
 int
 ispunct(charstring)
-	unsigned char *	charstring
+	SV *	charstring
+    PREINIT:
+	STRLEN	len;
     CODE:
-	unsigned char *s = charstring;
-	unsigned char *e = s + SvCUR(ST(0));
+	unsigned char *s = (unsigned char *) SvPV(charstring, len);
+	unsigned char *e = s + len;
 	for (RETVAL = 1; RETVAL && s < e; s++)
 	    if (!ispunct(*s))
 		RETVAL = 0;
@@ -936,10 +954,12 @@ ispunct(charstring)
 
 int
 isspace(charstring)
-	unsigned char *	charstring
+	SV *	charstring
+    PREINIT:
+	STRLEN	len;
     CODE:
-	unsigned char *s = charstring;
-	unsigned char *e = s + SvCUR(ST(0));
+	unsigned char *s = (unsigned char *) SvPV(charstring, len);
+	unsigned char *e = s + len;
 	for (RETVAL = 1; RETVAL && s < e; s++)
 	    if (!isspace(*s))
 		RETVAL = 0;
@@ -948,10 +968,12 @@ isspace(charstring)
 
 int
 isupper(charstring)
-	unsigned char *	charstring
+	SV *	charstring
+    PREINIT:
+	STRLEN	len;
     CODE:
-	unsigned char *s = charstring;
-	unsigned char *e = s + SvCUR(ST(0));
+	unsigned char *s = (unsigned char *) SvPV(charstring, len);
+	unsigned char *e = s + len;
 	for (RETVAL = 1; RETVAL && s < e; s++)
 	    if (!isupper(*s))
 		RETVAL = 0;
@@ -960,10 +982,12 @@ isupper(charstring)
 
 int
 isxdigit(charstring)
-	unsigned char *	charstring
+	SV *	charstring
+    PREINIT:
+	STRLEN	len;
     CODE:
-	unsigned char *s = charstring;
-	unsigned char *e = s + SvCUR(ST(0));
+	unsigned char *s = (unsigned char *) SvPV(charstring, len);
+	unsigned char *e = s + len;
 	for (RETVAL = 1; RETVAL && s < e; s++)
 	    if (!isxdigit(*s))
 		RETVAL = 0;
@@ -989,6 +1013,7 @@ localeconv()
 #ifdef HAS_LOCALECONV
 	struct lconv *lcbuf;
 	RETVAL = newHV();
+	sv_2mortal((SV*)RETVAL);
 	if ((lcbuf = localeconv())) {
 	    /* the strings */
 	    if (lcbuf->decimal_point && *lcbuf->decimal_point)
@@ -1293,7 +1318,7 @@ sigaction(sig, optaction, oldaction = 0)
 
 		/* Get back whether the old handler used safe signals. */
 		svp = hv_fetch(oldaction, "SAFE", 4, TRUE);
-		sv_setiv(*svp, oact.sa_handler == Perl_csighandler);
+		sv_setiv(*svp, oact.sa_handler == PL_csighandlerp);
 	    }
 
 	    if (action) {
@@ -1302,7 +1327,7 @@ sigaction(sig, optaction, oldaction = 0)
 		   (BTW, "csighandler" is very different from "sighandler".) */
 		svp = hv_fetch(action, "SAFE", 4, FALSE);
 		act.sa_handler = (*svp && SvTRUE(*svp))
-				 ? Perl_csighandler : PL_sighandlerp;
+				 ? PL_csighandlerp : PL_sighandlerp;
 
 		/* Vector new Perl handler through %SIG.
 		   (The core signal handlers read %SIG to dispatch.) */
@@ -1781,7 +1806,18 @@ access(filename, mode)
 
 char *
 ctermid(s = 0)
-	char *		s = 0;
+	char *          s = 0;
+    CODE:
+#ifdef HAS_CTERMID_R
+	s = safemalloc((size_t) L_ctermid);
+#endif
+	RETVAL = ctermid(s);
+    OUTPUT:
+	RETVAL
+    CLEANUP:
+#ifdef HAS_CTERMID_R
+	Safefree(s);
+#endif
 
 char *
 cuserid(s = 0)
@@ -1803,10 +1839,24 @@ pause()
 SysRet
 setgid(gid)
 	Gid_t		gid
+    CLEANUP:
+#ifndef WIN32
+	if (RETVAL >= 0) {
+	    PL_gid  = getgid();
+	    PL_egid = getegid();
+	}
+#endif
 
 SysRet
 setuid(uid)
 	Uid_t		uid
+    CLEANUP:
+#ifndef WIN32
+	if (RETVAL >= 0) {
+	    PL_uid  = getuid();
+	    PL_euid = geteuid();
+	}
+#endif
 
 SysRetLong
 sysconf(name)
@@ -1825,3 +1875,18 @@ getcwd()
 	XSprePUSH; PUSHTARG;
       }
 
+SysRet
+lchown(uid, gid, path)
+       Uid_t           uid
+       Gid_t           gid
+       char *          path
+    CODE:
+#ifdef HAS_LCHOWN
+       /* yes, the order of arguments is different,
+        * but consistent with CORE::chown() */
+       RETVAL = lchown(path, uid, gid);
+#else
+       RETVAL = not_here("lchown");
+#endif
+    OUTPUT:
+       RETVAL

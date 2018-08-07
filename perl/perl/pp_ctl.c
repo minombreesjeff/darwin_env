@@ -1,7 +1,7 @@
 /*    pp_ctl.c
  *
  *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2003, by Larry Wall and others
+ *    2000, 2001, 2002, 2003, 2004, by Larry Wall and others
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -59,6 +59,7 @@ PP(pp_regcreset)
     /* XXXX Should store the old value to allow for tie/overload - and
        restore in regcomp, where marked with XXXX. */
     PL_reginterp_cnt = 0;
+    TAINT_NOT;
     return NORMAL;
 }
 
@@ -158,14 +159,11 @@ PP(pp_substcont)
     char *orig = cx->sb_orig;
     register REGEXP *rx = cx->sb_rx;
     SV *nsv = Nullsv;
-
-    { 
-      REGEXP *old = PM_GETRE(pm);
-      if(old != rx) {
+    REGEXP *old = PM_GETRE(pm);
+    if(old != rx) {
 	if(old) 
-	  ReREFCNT_dec(old);
+	    ReREFCNT_dec(old);
 	PM_SETRE(pm,rx);
-      }
     }
 
     rxres_restore(&cx->sb_rxres, rx);
@@ -251,7 +249,8 @@ PP(pp_substcont)
 	    sv_pos_b2u(sv, &i);
 	mg->mg_len = i;
     }
-    ReREFCNT_inc(rx);
+    if (old != rx)
+	ReREFCNT_inc(rx);
     cx->sb_rxtainted |= RX_MATCH_TAINTED(rx);
     rxres_save(&cx->sb_rxres, rx);
     RETURNOP(pm->op_pmreplstart);
@@ -343,15 +342,20 @@ PP(pp_formline)
     bool item_is_utf8 = FALSE;
     bool targ_is_utf8 = FALSE;
     SV * nsv = Nullsv;
+    OP * parseres = 0;
+    char *fmt;
+    bool oneline;
 
     if (!SvMAGICAL(tmpForm) || !SvCOMPILED(tmpForm)) {
 	if (SvREADONLY(tmpForm)) {
 	    SvREADONLY_off(tmpForm);
-	    doparseform(tmpForm);
+	    parseres = doparseform(tmpForm);
 	    SvREADONLY_on(tmpForm);
 	}
 	else
-	    doparseform(tmpForm);
+	    parseres = doparseform(tmpForm);
+	if (parseres)
+	    return parseres;
     }
     SvPV_force(PL_formtarget, len);
     if (DO_UTF8(PL_formtarget))
@@ -387,6 +391,7 @@ PP(pp_formline)
 	    case FF_LINEMARK:	name = "LINEMARK";	break;
 	    case FF_END:	name = "END";		break;
             case FF_0DECIMAL:	name = "0DECIMAL";	break;
+	    case FF_LINESNGL:	name = "LINESNGL";	break;
 	    }
 	    if (arg >= 0)
 		PerlIO_printf(Perl_debug_log, "%-16s%ld\n", name, (long) arg);
@@ -493,6 +498,7 @@ PP(pp_formline)
 			while (s < send) {
 			    if (*s == '\r') {
 				itemsize = s - item;
+				chophere = s;
 				break;
 			    }
 			    if (*s++ & ~31)
@@ -532,6 +538,7 @@ PP(pp_formline)
 		while (s < send) {
 		    if (*s == '\r') {
 			itemsize = s - item;
+			chophere = s;
 			break;
 		    }
 		    if (*s++ & ~31)
@@ -622,7 +629,7 @@ PP(pp_formline)
 		sv_catpvn_utf8_upgrade(PL_formtarget, s, arg, nsv);
 		for (; t < SvEND(PL_formtarget); t++) {
 #ifdef EBCDIC
-		    int ch = *t++ = *s++;
+		    int ch = *t;
 		    if (iscntrl(ch))
 #else
 		    if (!(*t & ~31))
@@ -652,7 +659,13 @@ PP(pp_formline)
 	    SvSETMAGIC(sv);
 	    break;
 
+	case FF_LINESNGL:
+	    chopspace = 0;
+	    oneline = TRUE;
+	    goto ff_line;
 	case FF_LINEGLOB:
+	    oneline = FALSE;
+	ff_line:
 	    item = s = SvPV(sv, len);
 	    itemsize = len;
 	    if ((item_is_utf8 = DO_UTF8(sv)))
@@ -661,20 +674,31 @@ PP(pp_formline)
 		bool chopped = FALSE;
 		gotsome = TRUE;
 		send = s + len;
+		chophere = s + itemsize;
 		while (s < send) {
 		    if (*s++ == '\n') {
-			if (s == send) {
-			    itemsize--;
+		        if (oneline) {
 			    chopped = TRUE;
+			    chophere = s;
+			    break;
+			} else {
+			    if (s == send) {
+			        itemsize--;
+			        chopped = TRUE;
+			    } else
+			        lines++;
 			}
-			else
-			    lines++;
 		    }
 		}
 		SvCUR_set(PL_formtarget, t - SvPVX(PL_formtarget));
 		if (targ_is_utf8)
 		    SvUTF8_on(PL_formtarget);
-		sv_catsv(PL_formtarget, sv);
+		if (oneline) {
+		    SvCUR_set(sv, chophere - item);
+		    sv_catsv(PL_formtarget, sv);
+		    SvCUR_set(sv, itemsize);
+		} else
+		    sv_catsv(PL_formtarget, sv);
 		if (chopped)
 		    SvCUR_set(PL_formtarget, SvCUR(PL_formtarget) - 1);
 		SvGROW(PL_formtarget, SvCUR(PL_formtarget) + fudge + 1);
@@ -684,10 +708,24 @@ PP(pp_formline)
 	    }
 	    break;
 
+	case FF_0DECIMAL:
+	    arg = *fpc++;
+#if defined(USE_LONG_DOUBLE)
+	    fmt = (arg & 256) ? "%#0*.*" PERL_PRIfldbl : "%0*.*" PERL_PRIfldbl;
+#else
+	    fmt = (arg & 256) ? "%#0*.*f"              : "%0*.*f";
+#endif
+	    goto ff_dec;
 	case FF_DECIMAL:
+	    arg = *fpc++;
+#if defined(USE_LONG_DOUBLE)
+ 	    fmt = (arg & 256) ? "%#*.*" PERL_PRIfldbl : "%*.*" PERL_PRIfldbl;
+#else
+            fmt = (arg & 256) ? "%#*.*f"              : "%*.*f";
+#endif
+	ff_dec:
 	    /* If the field is marked with ^ and the value is undefined,
 	       blank it out. */
-	    arg = *fpc++;
 	    if ((arg & 512) && !SvOK(sv)) {
 		arg = fieldsize;
 		while (arg--)
@@ -696,67 +734,22 @@ PP(pp_formline)
 	    }
 	    gotsome = TRUE;
 	    value = SvNV(sv);
+	    /* overflow evidence */
+	    if (num_overflow(value, fieldsize, arg)) { 
+	        arg = fieldsize;
+		while (arg--)
+		    *t++ = '#';
+		break;
+	    }
 	    /* Formats aren't yet marked for locales, so assume "yes". */
 	    {
 		STORE_NUMERIC_STANDARD_SET_LOCAL();
-#if defined(USE_LONG_DOUBLE)
-		if (arg & 256) {
-		    sprintf(t, "%#*.*" PERL_PRIfldbl,
-			    (int) fieldsize, (int) arg & 255, value);
-		} else {
-		    sprintf(t, "%*.0" PERL_PRIfldbl, (int) fieldsize, value);
-		}
-#else
-		if (arg & 256) {
-		    sprintf(t, "%#*.*f",
-			    (int) fieldsize, (int) arg & 255, value);
-		} else {
-		    sprintf(t, "%*.0f",
-			    (int) fieldsize, value);
-		}
-#endif
+		sprintf(t, fmt, (int) fieldsize, (int) arg & 255, value);
 		RESTORE_NUMERIC_STANDARD();
 	    }
 	    t += fieldsize;
 	    break;
 
-	case FF_0DECIMAL:
-	    /* If the field is marked with ^ and the value is undefined,
-	       blank it out. */
-	    arg = *fpc++;
-	    if ((arg & 512) && !SvOK(sv)) {
-		arg = fieldsize;
-		while (arg--)
-		    *t++ = ' ';
-		break;
-	    }
-	    gotsome = TRUE;
-	    value = SvNV(sv);
-	    /* Formats aren't yet marked for locales, so assume "yes". */
-	    {
-		STORE_NUMERIC_STANDARD_SET_LOCAL();
-#if defined(USE_LONG_DOUBLE)
-		if (arg & 256) {
-		    sprintf(t, "%#0*.*" PERL_PRIfldbl,
-			    (int) fieldsize, (int) arg & 255, value);
-/* is this legal? I don't have long doubles */
-		} else {
-		    sprintf(t, "%0*.0" PERL_PRIfldbl, (int) fieldsize, value);
-		}
-#else
-		if (arg & 256) {
-		    sprintf(t, "%#0*.*f",
-			    (int) fieldsize, (int) arg & 255, value);
-		} else {
-		    sprintf(t, "%0*.0f",
-			    (int) fieldsize, value);
-		}
-#endif
-		RESTORE_NUMERIC_STANDARD();
-	    }
-	    t += fieldsize;
-	    break;
-	
 	case FF_NEWLINE:
 	    f++;
 	    while (t-- > linemark && *t == ' ') ;
@@ -866,6 +859,7 @@ PP(pp_mapstart)
 PP(pp_mapwhile)
 {
     dSP;
+    I32 gimme = GIMME_V;
     I32 items = (SP - PL_stack_base) - *PL_markstack_ptr; /* how many new items */
     I32 count;
     I32 shift;
@@ -876,7 +870,7 @@ PP(pp_mapwhile)
     ++PL_markstack_ptr[-1];
 
     /* if there are new items, push them into the destination list */
-    if (items) {
+    if (items && gimme != G_VOID) {
 	/* might need to make room back there first */
 	if (items > PL_markstack_ptr[-1] - PL_markstack_ptr[-2]) {
 	    /* XXX this implementation is very pessimal because the stack
@@ -913,14 +907,24 @@ PP(pp_mapwhile)
 	}
 	/* copy the new items down to the destination list */
 	dst = PL_stack_base + (PL_markstack_ptr[-2] += items) - 1;
-	while (items-- > 0)
-	    *dst-- = SvTEMP(TOPs) ? POPs : sv_mortalcopy(POPs);
+	if (gimme == G_ARRAY) {
+	    while (items-- > 0)
+		*dst-- = SvTEMP(TOPs) ? POPs : sv_mortalcopy(POPs);
+	}
+	else { 
+	    /* scalar context: we don't care about which values map returns
+	     * (we use undef here). And so we certainly don't want to do mortal
+	     * copies of meaningless values. */
+	    while (items-- > 0) {
+		(void)POPs;
+		*dst-- = &PL_sv_undef;
+	    }
+	}
     }
     LEAVE;					/* exit inner scope */
 
     /* All done yet? */
     if (PL_markstack_ptr[-1] > *PL_markstack_ptr) {
-	I32 gimme = GIMME_V;
 
 	(void)POPMARK;				/* pop top */
 	LEAVE;					/* exit outer scope */
@@ -1005,31 +1009,34 @@ PP(pp_flip)
     }
 }
 
+/* This code tries to decide if "$left .. $right" should use the
+   magical string increment, or if the range is numeric (we make
+   an exception for .."0" [#18165]). AMS 20021031. */
+
+#define RANGE_IS_NUMERIC(left,right) ( \
+	SvNIOKp(left)  || (SvOK(left)  && !SvPOKp(left))  || \
+	SvNIOKp(right) || (SvOK(right) && !SvPOKp(right)) || \
+	(((!SvOK(left) && SvOK(right)) || (looks_like_number(left) && \
+	  SvPOKp(left) && *SvPVX(left) != '0')) && looks_like_number(right)))
+
 PP(pp_flop)
 {
     dSP;
 
     if (GIMME == G_ARRAY) {
 	dPOPPOPssrl;
-	register I32 i, j;
+	register IV i, j;
 	register SV *sv;
-	I32 max;
+	IV max;
 
 	if (SvGMAGICAL(left))
 	    mg_get(left);
 	if (SvGMAGICAL(right))
 	    mg_get(right);
 
-	/* This code tries to decide if "$left .. $right" should use the
-	   magical string increment, or if the range is numeric (we make
-	   an exception for .."0" [#18165]). AMS 20021031. */
-
-	if (SvNIOKp(left) || !SvPOKp(left) ||
-	    SvNIOKp(right) || !SvPOKp(right) ||
-	    (looks_like_number(left) && *SvPVX(left) != '0' &&
-	     looks_like_number(right)))
-	{
-	    if (SvNV(left) < IV_MIN || SvNV(right) > IV_MAX)
+	if (RANGE_IS_NUMERIC(left,right)) {
+	    if ((SvOK(left) && SvNV(left) < IV_MIN) ||
+		(SvOK(right) && SvNV(right) > IV_MAX))
 		DIE(aTHX_ "Range iterator outside integer range");
 	    i = SvIV(left);
 	    max = SvIV(right);
@@ -1633,7 +1640,6 @@ PP(pp_dbstate)
 	PUSHBLOCK(cx, CXt_SUB, SP);
 	PUSHSUB_DB(cx);
 	CvDEPTH(cv)++;
-	(void)SvREFCNT_inc(cv);
 	PAD_SET_CUR(CvPADLIST(cv),1);
 	RETURNOP(CvSTART(cv));
     }
@@ -1700,20 +1706,20 @@ PP(pp_enteriter)
 	cx->blk_loop.iterary = (AV*)SvREFCNT_inc(POPs);
 	if (SvTYPE(cx->blk_loop.iterary) != SVt_PVAV) {
 	    dPOPss;
-	    /* See comment in pp_flop() */
-	    if (SvNIOKp(sv) || !SvPOKp(sv) ||
-		SvNIOKp(cx->blk_loop.iterary) || !SvPOKp(cx->blk_loop.iterary) ||
-		(looks_like_number(sv) && *SvPVX(sv) != '0' &&
-		 looks_like_number((SV*)cx->blk_loop.iterary)))
-	    {
-		 if (SvNV(sv) < IV_MIN ||
-		     SvNV((SV*)cx->blk_loop.iterary) >= IV_MAX)
-		     DIE(aTHX_ "Range iterator outside integer range");
-		 cx->blk_loop.iterix = SvIV(sv);
-		 cx->blk_loop.itermax = SvIV((SV*)cx->blk_loop.iterary);
+	    SV *right = (SV*)cx->blk_loop.iterary;
+	    if (RANGE_IS_NUMERIC(sv,right)) {
+		if ((SvOK(sv) && SvNV(sv) < IV_MIN) ||
+		    (SvOK(right) && SvNV(right) >= IV_MAX))
+		    DIE(aTHX_ "Range iterator outside integer range");
+		cx->blk_loop.iterix = SvIV(sv);
+		cx->blk_loop.itermax = SvIV(right);
 	    }
-	    else
+	    else {
+		STRLEN n_a;
 		cx->blk_loop.iterlval = newSVsv(sv);
+		(void) SvPV_force(cx->blk_loop.iterlval,n_a);
+		(void) SvPV(right,n_a);
+	    }
 	}
     }
     else {
@@ -1816,6 +1822,7 @@ PP(pp_return)
     switch (CxTYPE(cx)) {
     case CXt_SUB:
 	popsub2 = TRUE;
+	cxstack_ix++; /* preserve cx entry on stack for use by POPSUB */
 	break;
     case CXt_EVAL:
 	if (!(PL_in_eval & EVAL_KEEPERR))
@@ -1878,6 +1885,7 @@ PP(pp_return)
     LEAVE;
     /* Stack values are safe: */
     if (popsub2) {
+	cxstack_ix--;
 	POPSUB(cx,sv);	/* release CV and @_ ... */
     }
     else
@@ -1918,6 +1926,7 @@ PP(pp_last)
 	dounwind(cxix);
 
     POPBLOCK(cx,newpm);
+    cxstack_ix++; /* temporarily protect top context */
     mark = newsp;
     switch (CxTYPE(cx)) {
     case CXt_LOOP:
@@ -1960,6 +1969,7 @@ PP(pp_last)
     PUTBACK;
 
     LEAVE;
+    cxstack_ix--;
     /* Stack values are safe: */
     switch (pop2) {
     case CXt_LOOP:
@@ -2026,6 +2036,7 @@ PP(pp_redo)
     TOPBLOCK(cx);
     oldsave = PL_scopestack[PL_scopestack_ix - 1];
     LEAVE_SCOPE(oldsave);
+    FREETMPS;
     return cx->blk_loop.redo_op;
 }
 
@@ -2093,6 +2104,7 @@ PP(pp_goto)
     char *label;
     int do_dump = (PL_op->op_type == OP_DUMP);
     static char must_have_label[] = "goto must have label";
+    AV *oldav = Nullav;
 
     label = 0;
     if (PL_op->op_flags & OPf_STACKED) {
@@ -2155,7 +2167,7 @@ PP(pp_goto)
 #endif /* USE_5005THREADS */
 		/* abandon @_ if it got reified */
 		if (AvREAL(av)) {
-		    (void)sv_2mortal((SV*)av);	/* delay until return */
+		    oldav = av;	/* delay until return */
 		    av = newAV();
 		    av_extend(av, items-1);
 		    AvFLAGS(av) = AVf_REIFY;
@@ -2185,6 +2197,9 @@ PP(pp_goto)
 
 	    /* Now do some callish stuff. */
 	    SAVETMPS;
+	    /* For reified @_, delay freeing till return from new sub */
+	    if (oldav)
+		SAVEFREESV((SV*)oldav);
 	    SAVEFREESV(cv); /* later, undo the 'avoid premature free' hack */
 	    if (CvXSUB(cv)) {
 #ifdef PERL_XSUB_OLDSTYLE
@@ -2630,7 +2645,7 @@ Perl_sv_compile_2op(pTHX_ SV *sv, OP** startop, char *code, PAD** padp)
     SAVETMPS;
     /* switch to eval mode */
 
-    if (PL_curcop == &PL_compiling) {
+    if (IN_PERL_COMPILETIME) {
 	SAVECOPSTASH_FREE(&PL_compiling);
 	CopSTASH_set(&PL_compiling, PL_curstash);
     }
@@ -2660,17 +2675,16 @@ Perl_sv_compile_2op(pTHX_ SV *sv, OP** startop, char *code, PAD** padp)
 #else
     SAVEVPTR(PL_op);
 #endif
-    PL_hints &= HINT_UTF8;
 
     /* we get here either during compilation, or via pp_regcomp at runtime */
-    runtime = PL_op && (PL_op->op_type == OP_REGCOMP);
+    runtime = IN_PERL_RUNTIME;
     if (runtime)
 	runcv = find_runcv(NULL);
 
     PL_op = &dummy;
     PL_op->op_type = OP_ENTEREVAL;
     PL_op->op_flags = 0;			/* Avoid uninit warning. */
-    PUSHBLOCK(cx, CXt_EVAL|(PL_curcop == &PL_compiling ? 0 : CXp_REAL), SP);
+    PUSHBLOCK(cx, CXt_EVAL|(IN_PERL_COMPILETIME ? 0 : CXp_REAL), SP);
     PUSHEVAL(cx, 0, Nullgv);
 
     if (runtime)
@@ -2686,7 +2700,7 @@ Perl_sv_compile_2op(pTHX_ SV *sv, OP** startop, char *code, PAD** padp)
     /* XXX DAPM do this properly one year */
     *padp = (AV*)SvREFCNT_inc(PL_comppad);
     LEAVE;
-    if (PL_curcop == &PL_compiling)
+    if (IN_PERL_COMPILETIME)
 	PL_compiling.op_private = (U8)(PL_hints & HINT_PRIVATE_MASK);
 #ifdef OP_IN_REGISTER
     op = PL_opsave;
@@ -2980,9 +2994,6 @@ PP(pp_require)
 		    "v%d.%d.%d, stopped", rev, ver, sver, PERL_REVISION,
 		    PERL_VERSION, PERL_SUBVERSION);
 	    }
-	    if (ckWARN(WARN_PORTABLE))
-		Perl_warner(aTHX_ packWARN(WARN_PORTABLE),
-                        "v-string in use/require non-portable");
 	    RETPUSHYES;
 	}
 	else if (!SvPOKp(sv)) {			/* require 5.005_03 */
@@ -3138,6 +3149,7 @@ PP(pp_require)
 						      PERL_SCRIPT_MODE);
 			    }
 			}
+			SP--;
 		    }
 
 		    PUTBACK;
@@ -3538,7 +3550,7 @@ PP(pp_leavetry)
     RETURNOP(retop);
 }
 
-STATIC void
+STATIC OP *
 S_doparseform(pTHX_ SV *sv)
 {
     STRLEN len;
@@ -3554,7 +3566,8 @@ S_doparseform(pTHX_ SV *sv)
     U32 *linepc = 0;
     register I32 arg;
     bool ischop;
-    int maxops = 2; /* FF_LINEMARK + FF_END) */
+    bool unchopnum = FALSE;
+    int maxops = 12; /* FF_LINEMARK + FF_END + 10 (\0 without preceding \n) */
 
     if (len == 0)
 	Perl_croak(aTHX_ "Null picture in formline");
@@ -3594,8 +3607,12 @@ S_doparseform(pTHX_ SV *sv)
 	case ' ': case '\t':
 	    skipspaces++;
 	    continue;
-	
-	case '\n': case 0:
+        case 0:
+	    if (s < send) {
+	        skipspaces = 0;
+                continue;
+            } /* else FALL THROUGH */
+	case '\n':
 	    arg = s - base;
 	    skipspaces++;
 	    arg -= skipspaces;
@@ -3651,8 +3668,12 @@ S_doparseform(pTHX_ SV *sv)
 	    *fpc++ = FF_FETCH;
 	    if (*s == '*') {
 		s++;
-		*fpc++ = 0;
-		*fpc++ = FF_LINEGLOB;
+		*fpc++ = 2;  /* skip the @* or ^* */
+		if (ischop) {
+		    *fpc++ = FF_LINESNGL;
+		    *fpc++ = FF_CHOP;
+		} else
+		    *fpc++ = FF_LINEGLOB;
 	    }
 	    else if (*s == '#' || (*s == '.' && s[1] == '#')) {
 		arg = ischop ? 512 : 0;
@@ -3670,6 +3691,7 @@ S_doparseform(pTHX_ SV *sv)
 		*fpc++ = s - base;		/* fieldsize for FETCH */
 		*fpc++ = FF_DECIMAL;
                 *fpc++ = (U16)arg;
+                unchopnum |= ! ischop;
             }
             else if (*s == '0' && s[1] == '#') {  /* Zero padded decimals */
                 arg = ischop ? 512 : 0;
@@ -3688,6 +3710,7 @@ S_doparseform(pTHX_ SV *sv)
                 *fpc++ = s - base;                /* fieldsize for FETCH */
                 *fpc++ = FF_0DECIMAL;
 		*fpc++ = (U16)arg;
+                unchopnum |= ! ischop;
 	    }
 	    else {
 		I32 prespace = 0;
@@ -3742,6 +3765,38 @@ S_doparseform(pTHX_ SV *sv)
     Safefree(fops);
     sv_magic(sv, Nullsv, PERL_MAGIC_fm, Nullch, 0);
     SvCOMPILED_on(sv);
+
+    if (unchopnum && repeat) 
+        DIE(aTHX_ "Repeated format line will never terminate (~~ and @#)");
+    return 0;
+}
+
+
+STATIC bool
+S_num_overflow(NV value, I32 fldsize, I32 frcsize)
+{
+    /* Can value be printed in fldsize chars, using %*.*f ? */
+    NV pwr = 1;
+    NV eps = 0.5;
+    bool res = FALSE;
+    int intsize = fldsize - (value < 0 ? 1 : 0);
+
+    if (frcsize & 256)
+        intsize--;
+    frcsize &= 255;
+    intsize -= frcsize;
+
+    while (intsize--) pwr *= 10.0;
+    while (frcsize--) eps /= 10.0;
+
+    if( value >= 0 ){
+        if (value + eps >= pwr)
+	    res = TRUE;
+    } else {
+        if (value - eps <= -pwr)
+	    res = TRUE;
+    }
+    return res;
 }
 
 static I32
