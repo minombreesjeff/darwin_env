@@ -94,7 +94,6 @@ $(OBJROOT)/$(PROJECT):
 	chmod u+w $(PROJECT)/patchlevel.h; \
 	ed - $(PROJECT)/patchlevel.h < patchlevel.h.ed; \
 	chmod u-w $(PROJECT)/patchlevel.h
-	cd $(OBJROOT)/$(PROJECT) && patch -p1 -i $(OBJROOT)/sprintf-5.8.7.patch
 
 .DEFAULT:
 	@$(MAKE) -f Makefile $@
