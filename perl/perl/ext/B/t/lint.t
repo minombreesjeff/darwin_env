@@ -3,6 +3,11 @@
 BEGIN {
     chdir 't' if -d 't';
     @INC = qw(../lib);
+    require Config;
+    if (($Config::Config{'extensions'} !~ /\bB\b/) ){
+        print "1..0 # Skip -- Perl configured without B module\n";
+        exit 0;
+    }
     require './test.pl';
 }
 
@@ -41,7 +46,7 @@ SKIP : {
 
     use Config;
     skip("Doesn't work with threaded perls",11)
-       if $Config{useithreads} || $Config{use5005threads};
+       if $Config{useithreads} || ($] < 5.009 && $Config{use5005threads});
 
     runlint 'implicit-read', '1 for @ARGV', <<'RESULT', 'implicit-read in foreach';
 Implicit use of $_ in foreach at -e line 1

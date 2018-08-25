@@ -1,9 +1,12 @@
 #!./perl
 
-use Cwd;
 BEGIN {
     chdir 't' if -d 't';
+    if ($ENV{PERL_CORE}) {
+        @INC = '../lib';
+    }
 }
+use Cwd;
 
 use Config;
 use strict;
@@ -11,7 +14,15 @@ use warnings;
 use File::Spec;
 use File::Path;
 
-use Test::More tests => 20;
+use Test::More;
+
+my $tests = 24;
+my $EXTRA_ABSPATH_TESTS = $ENV{PERL_CORE} || $ENV{TEST_PERL_CWD_CODE};
+# _perl_abs_path() currently only works when the directory separator
+# is '/', so don't test it when it won't work.
+$EXTRA_ABSPATH_TESTS &&= $Config{prefix} =~ m/\//;
+$tests += 3 if $EXTRA_ABSPATH_TESTS;
+plan tests => $tests;
 
 my $IsVMS = $^O eq 'VMS';
 my $IsMacOS = $^O eq 'MacOS';
@@ -126,10 +137,10 @@ rmtree($test_dirs[0], 0, 0);
 }
 
 SKIP: {
-    skip "no symlinks on this platform", 2 unless $Config{d_symlink};
+    skip "no symlinks on this platform", 2+$EXTRA_ABSPATH_TESTS unless $Config{d_symlink};
 
     mkpath([$Test_Dir], 0, 0777);
-    symlink $Test_Dir => "linktest";
+    symlink $Test_Dir, "linktest";
 
     my $abs_path      =  Cwd::abs_path("linktest");
     my $fast_abs_path =  Cwd::fast_abs_path("linktest");
@@ -137,23 +148,53 @@ SKIP: {
 
     like($abs_path,      qr|$want$|);
     like($fast_abs_path, qr|$want$|);
+    like(Cwd::_perl_abs_path("linktest"), qr|$want$|) if $EXTRA_ABSPATH_TESTS;
 
     rmtree($test_dirs[0], 0, 0);
     unlink "linktest";
 }
 
-#############################################
-# These two routines give us sort of a poor-man's cross-platform
-# directory comparison routine.
+if ($ENV{PERL_CORE}) {
+    chdir '../ext/Cwd/t';
+    unshift @INC, '../../../lib';
+}
 
-sub bracketed_form {
+# Make sure we can run abs_path() on files, not just directories
+my $path = 'cwd.t';
+path_ends_with(Cwd::abs_path($path), 'cwd.t', 'abs_path() can be invoked on a file');
+path_ends_with(Cwd::fast_abs_path($path), 'cwd.t', 'fast_abs_path() can be invoked on a file');
+path_ends_with(Cwd::_perl_abs_path($path), 'cwd.t', '_perl_abs_path() can be invoked on a file')
+  if $EXTRA_ABSPATH_TESTS;
+
+$path = File::Spec->catfile(File::Spec->updir, 't', $path);
+path_ends_with(Cwd::abs_path($path), 'cwd.t', 'abs_path() can be invoked on a file');
+path_ends_with(Cwd::fast_abs_path($path), 'cwd.t', 'fast_abs_path() can be invoked on a file');
+path_ends_with(Cwd::_perl_abs_path($path), 'cwd.t', '_perl_abs_path() can be invoked on a file')
+  if $EXTRA_ABSPATH_TESTS;
+
+
+#############################################
+# These routines give us sort of a poor-man's cross-platform
+# directory or path comparison capability.
+
+sub bracketed_form_dir {
   return join '', map "[$_]", 
     grep length, File::Spec->splitdir(File::Spec->canonpath( shift() ));
 }
 
 sub dir_ends_with {
   my ($dir, $expect) = (shift, shift);
-  my $bracketed_expect = quotemeta bracketed_form($expect);
-  like( bracketed_form($dir), qr|$bracketed_expect$|i, (@_ ? shift : ()) );
+  my $bracketed_expect = quotemeta bracketed_form_dir($expect);
+  like( bracketed_form_dir($dir), qr|$bracketed_expect$|i, (@_ ? shift : ()) );
 }
 
+sub bracketed_form_path {
+  return join '', map "[$_]", 
+    grep length, File::Spec->splitpath(File::Spec->canonpath( shift() ));
+}
+
+sub path_ends_with {
+  my ($dir, $expect) = (shift, shift);
+  my $bracketed_expect = quotemeta bracketed_form_path($expect);
+  like( bracketed_form_path($dir), qr|$bracketed_expect$|i, (@_ ? shift : ()) );
+}

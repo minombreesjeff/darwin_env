@@ -22,6 +22,11 @@
 /*
 =head1 Pad Data Structures
 
+This file contains the functions that create and manipulate scratchpads,
+which are array-of-array data structures attached to a CV (ie a sub)
+and which store lexical variables and opcode temporary and per-thread
+values.
+
 =for apidoc m|AV *|CvPADLIST|CV *cv
 CV's can have CvPADLIST(cv) set to point to an AV.
 
@@ -1487,6 +1492,9 @@ If has_args is true, give the new pad an @_ in slot zero.
 
 =cut
 */
+
+/* XXX pad_push is now always called with has_args == 1. Get rid of
+ * this arg at some point */
 
 void
 Perl_pad_push(pTHX_ PADLIST *padlist, int depth, int has_args)

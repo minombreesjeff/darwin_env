@@ -7,6 +7,11 @@ BEGIN {
 	    print "1..0 # skip: EBCDIC\n";
 	    exit 0;
 	}
+	require Config;
+	if (($Config::Config{'extensions'} !~ m!\bList/Util\b!) ){
+	    print "1..0 # Skip -- Perl configured without List::Util module\n";
+	    exit 0;
+	}
 }
 
 use vars qw( $foo @bar %baz );
@@ -200,7 +205,10 @@ is( $out->read, "\$_<foo = 1\n", 'dumped glob for $_<foo correctly (DB)' );
 
 # test CvGV name
 SKIP: {
-	skip( 'no Devel::Peek', 1 ) unless use_ok( 'Devel::Peek' );
+	if (" $Config::Config{'extensions'} " !~ m[ Devel/Peek ]) {
+	    skip( 'no Devel::Peek', 2 );
+	}
+	use_ok( 'Devel::Peek' );
 	is( $d->CvGV_name(\&TieOut::read), 'TieOut::read', 'CvGV_name found sub' );
 }
 

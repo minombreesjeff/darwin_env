@@ -45,7 +45,7 @@ configure:: $(ConfigStamp2)
 $(ConfigStamp2): $(ConfigStamp)
 	$(_v) sed -e 's/@PREPENDFILE@/$(PREPENDFILE)/' \
 	    -e 's/@APPENDFILE@/$(APPENDFILE)/' \
-	    -e 's/@VERSION@/$(VERSION)/' < $(SRCROOT)/config.h.ed | \
+	    -e 's/@VERSION@/$(_VERSION)/' < $(SRCROOT)/config.h.ed | \
 	    ed - ${BuildDirectory}/config.h
 	$(_v) ed - ${BuildDirectory}/Makefile < $(SRCROOT)/Makefile.ed
 	$(_v) ed - ${BuildDirectory}/GNUmakefile < $(SRCROOT)/Makefile.ed

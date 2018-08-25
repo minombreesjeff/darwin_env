@@ -1,0 +1,6 @@
+# $Id: test_manifest,v 1.4 2004/09/03 00:06:04 comdog Exp $
+load.t
+pod.t
+import.t
+object.t
+errors.t

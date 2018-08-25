@@ -16,20 +16,20 @@
  * some salt.
  */
 
+/* This file contains pp ("push/pop") functions that
+ * execute the opcodes that make up a perl program. A typical pp function
+ * expects to find its arguments on the stack, and usually pushes its
+ * results onto the stack, hence the 'pp' terminology. Each OP structure
+ * contains a pointer to the relevant pp_foo() function.
+ *
+ * This particular file just contains pp_pack() and pp_unpack(). See the
+ * other pp*.c files for the rest of the pp_ functions.
+ */
+
+
 #include "EXTERN.h"
 #define PERL_IN_PP_PACK_C
 #include "perl.h"
-
-/*
- * The compiler on Concurrent CX/UX systems has a subtle bug which only
- * seems to show up when compiling pp.c - it generates the wrong double
- * precision constant value for (double)UV_MAX when used inline in the body
- * of the code below, so this makes a static variable up front (which the
- * compiler seems to get correct) and uses it in place of UV_MAX below.
- */
-#ifdef CXUX_BROKEN_CONSTANT_CONVERT
-static double UV_MAX_cxux = ((double)UV_MAX);
-#endif
 
 /*
  * Offset for integer pack/unpack.

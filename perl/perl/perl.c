@@ -12,6 +12,12 @@
  * "A ship then new they built for him/of mithril and of elven glass" --Bilbo
  */
 
+/* This file contains the top-level functions that are used to create, use
+ * and destroy a perl interpreter, plus the functions used by XS code to
+ * call back into perl. Note that it does not contain the actual main()
+ * function of the interpreter; that can be found in perlmain.c
+ */
+
 /* PSz 12 Nov 03
  * 
  * Be proud that perl(1) may proclaim:
@@ -201,8 +207,7 @@ perl_alloc(void)
     my_perl = (PerlInterpreter*)PerlMem_malloc(sizeof(PerlInterpreter));
 
     INIT_TLS_AND_INTERP;
-    Zero(my_perl, 1, PerlInterpreter);
-    return my_perl;
+    return ZeroD(my_perl, 1, PerlInterpreter);
 }
 #endif /* PERL_IMPLICIT_SYS */
 
@@ -270,11 +275,15 @@ perl_construct(pTHXx)
 	    SvREFCNT(&PL_sv_undef) = (~(U32)0)/2;
 
 	    sv_setpv(&PL_sv_no,PL_No);
+	    /* value lookup in void context - happens to have the side effect
+	       of caching the numeric forms.  */
+	    SvIV(&PL_sv_no);
 	    SvNV(&PL_sv_no);
 	    SvREADONLY_on(&PL_sv_no);
 	    SvREFCNT(&PL_sv_no) = (~(U32)0)/2;
 
 	    sv_setpv(&PL_sv_yes,PL_Yes);
+	    SvIV(&PL_sv_yes);
 	    SvNV(&PL_sv_yes);
 	    SvREADONLY_on(&PL_sv_yes);
 	    SvREFCNT(&PL_sv_yes) = (~(U32)0)/2;
@@ -590,7 +599,7 @@ perl_destruct(pTHXx)
      */
 #ifndef PERL_MICRO
 #if defined(USE_ENVIRON_ARRAY) && !defined(PERL_USE_SAFE_PUTENV)
-    if (environ != PL_origenviron
+    if (environ != PL_origenviron && !PL_use_safe_putenv
 #ifdef USE_ITHREADS
 	/* only main thread can free environ[0] contents */
 	&& PL_curinterp == aTHX
@@ -609,6 +618,9 @@ perl_destruct(pTHXx)
     }
 #endif
 #endif /* !PERL_MICRO */
+
+    /* reset so print() ends up where we expect */
+    setdefout(Nullgv);
 
 #ifdef USE_ITHREADS
     /* the syntax tree is shared between clones
@@ -749,9 +761,6 @@ perl_destruct(pTHXx)
     PL_DBcv = Nullcv;
     PL_dbargs = Nullav;
     PL_debstash = Nullhv;
-
-    /* reset so print() ends up where we expect */
-    setdefout(Nullgv);
 
     SvREFCNT_dec(PL_argvout_stack);
     PL_argvout_stack = Nullav;
@@ -959,7 +968,10 @@ perl_destruct(pTHXx)
 	    svend = &sva[SvREFCNT(sva)];
 	    for (sv = sva + 1; sv < svend; ++sv) {
 		if (SvTYPE(sv) != SVTYPEMASK) {
-		    PerlIO_printf(Perl_debug_log, "leaked: 0x%p\n", sv);
+		    PerlIO_printf(Perl_debug_log, "leaked: sv=0x%p"
+			" flags=0x08%"UVxf
+			" refcnt=%"UVuf pTHX__FORMAT "\n",
+			sv, sv->sv_flags, sv->sv_refcnt pTHX__VALUE);
 		}
 	    }
 	}
@@ -1048,7 +1060,7 @@ perl_destruct(pTHXx)
 	    }
 	}
 	/* we know that type >= SVt_PV */
-	(void)SvOOK_off(PL_mess_sv);
+	SvOOK_off(PL_mess_sv);
 	Safefree(SvPVX(PL_mess_sv));
 	Safefree(SvANY(PL_mess_sv));
 	Safefree(PL_mess_sv);
@@ -1490,7 +1502,8 @@ S_parse_body(pTHX_ char **env, XSINIT_t xsinit)
 		    sv_catpv(PL_Sv,"\"  Locally applied patches:\\n\",");
 		    for (i = 1; i <= LOCAL_PATCH_COUNT; i++) {
 			if (PL_localpatches[i])
-			    Perl_sv_catpvf(aTHX_ PL_Sv,"q\"  \t%s\n\",",PL_localpatches[i]);
+			    Perl_sv_catpvf(aTHX_ PL_Sv,"q%c\t%s\n%c,",
+				    0, PL_localpatches[i], 0);
 		    }
 		}
 #endif
@@ -2336,6 +2349,10 @@ Perl_eval_sv(pTHX_ SV *sv, I32 flags)
     CALLPROTECT(aTHX_ pcur_env, &ret, MEMBER_TO_FPTR(S_vcall_body),
 		(OP*)&myop, TRUE);
 #else
+    /* fail now; otherwise we could fail after the JMPENV_PUSH but
+     * before a PUSHEVAL, which corrupts the stack after a croak */
+    TAINT_PROPER("eval_sv()");
+
     JMPENV_PUSH(ret);
 #endif
     switch (ret) {
@@ -2507,6 +2524,39 @@ NULL
 int
 Perl_get_debug_opts(pTHX_ char **s)
 {
+  return get_debug_opts_flags(s, 1);
+}
+
+int
+Perl_get_debug_opts_flags(pTHX_ char **s, int flags)
+{
+    static char *usage_msgd[] = {
+      " Debugging flag values: (see also -d)",
+      "  p  Tokenizing and parsing (with v, displays parse stack)",
+      "  s  Stack snapshots (with v, displays all stacks)",
+      "  l  Context (loop) stack processing",
+      "  t  Trace execution",
+      "  o  Method and overloading resolution",
+      "  c  String/numeric conversions",
+      "  P  Print profiling info, preprocessor command for -P, source file input state",
+      "  m  Memory allocation",
+      "  f  Format processing",
+      "  r  Regular expression parsing and execution",
+      "  x  Syntax tree dump",
+      "  u  Tainting checks",
+      "  H  Hash dump -- usurps values()",
+      "  X  Scratchpad allocation",
+      "  D  Cleaning up",
+      "  S  Thread synchronization",
+      "  T  Tokenising",
+      "  R  Include reference counts of dumped variables (eg when using -Ds)",
+      "  J  Do not s,t,P-debug (Jump over) opcodes within package DB",
+      "  v  Verbose: use in conjunction with other flags",
+      "  C  Copy On Write",
+      "  A  Consistency checks on internal structures",
+      "  q  quiet - currently only suppresses the 'EXECUTING' message",
+      NULL
+    };
     int i = 0;
     if (isALPHA(**s)) {
 	/* if adding extra options, remember to update DEBUG_MASK */
@@ -2517,13 +2567,18 @@ Perl_get_debug_opts(pTHX_ char **s)
 	    if (d)
 		i |= 1 << (d - debopts);
 	    else if (ckWARN_d(WARN_DEBUGGING))
-		Perl_warner(aTHX_ packWARN(WARN_DEBUGGING),
-		    "invalid option -D%c\n", **s);
+	        Perl_warner(aTHX_ packWARN(WARN_DEBUGGING),
+		    "invalid option -D%c, use -D'' to see choices\n", **s);
 	}
     }
-    else {
+    else if (isDIGIT(**s)) {
 	i = atoi(*s);
 	for (; isALNUM(**s); (*s)++) ;
+    }
+    else if (flags & 1) {
+      /* Give help.  */
+      char **p = usage_msgd;
+      while (*p) PerlIO_printf(PerlIO_stdout(), "%s\n", *p++);
     }
 #  ifdef EBCDIC
     if ((i & DEBUG_p_FLAG) && ckWARN_d(WARN_DEBUGGING))
@@ -2605,6 +2660,13 @@ Perl_moreswitches(pTHX_ char *s)
     case 'd':
 	forbid_setid("-d");
 	s++;
+
+        /* -dt indicates to the debugger that threads will be used */
+	if (*s == 't' && !isALNUM(s[1])) {
+	    ++s;
+	    my_setenv("PERL5DB_THREADED", "1");
+	}
+
 	/* The following permits -d:Mod to accepts arguments following an =
 	   in the fashion that -MSome::Mod does. */
 	if (*s == ':' || *s == '=') {
@@ -2635,11 +2697,11 @@ Perl_moreswitches(pTHX_ char *s)
 #ifdef DEBUGGING
 	forbid_setid("-D");
 	s++;
-	PL_debug = get_debug_opts(&s) | DEBUG_TOP_FLAG;
+	PL_debug = get_debug_opts_flags(&s, 1) | DEBUG_TOP_FLAG;
 #else /* !DEBUGGING */
 	if (ckWARN_d(WARN_DEBUGGING))
 	    Perl_warner(aTHX_ packWARN(WARN_DEBUGGING),
-	           "Recompile perl with -DDEBUGGING to use -D switch\n");
+	           "Recompile perl with -DDEBUGGING to use -D switch (did you mean -d ?)\n");
 	for (s++; isALNUM(*s); s++) ;
 #endif
 	/*SUPPRESS 530*/
@@ -2752,7 +2814,7 @@ Perl_moreswitches(pTHX_ char *s)
 	    av_push(PL_preambleav, sv);
 	}
 	else
-	    Perl_croak(aTHX_ "No space allowed after -%c", *(s-1));
+	    Perl_croak(aTHX_ "Missing argument to -%c", *(s-1));
 	return s;
     case 'n':
 	PL_minus_n = TRUE;
@@ -2885,7 +2947,7 @@ Perl may be copied only under the terms of either the Artistic License or the\n\
 GNU General Public License, which may be found in the Perl 5 source kit.\n\n\
 Complete documentation for Perl, including FAQ lists, should be found on\n\
 this system using `man perl' or `perldoc perl'.  If you have access to the\n\
-Internet, point your browser at http://www.perl.com/, the Perl Home Page.\n\n");
+Internet, point your browser at http://www.perl.org/, the Perl Home Page.\n\n");
 	my_exit(0);
     case 'w':
 	if (! (PL_dowarn & G_WARN_ALL_MASK))
@@ -3205,9 +3267,9 @@ S_open_script(pTHX_ char *scriptname, bool dosearch, SV *sv)
     }
 #endif /* IAMSUID */
     if (!PL_rsfp) {
-/* PSz 16 Sep 03  Keep neat error message */
-            Perl_croak(aTHX_ "Can't open perl script \"%s\": %s\n",
-                       CopFILE(PL_curcop), Strerror(errno));
+	/* PSz 16 Sep 03  Keep neat error message */
+	Perl_croak(aTHX_ "Can't open perl script \"%s\": %s\n",
+		CopFILE(PL_curcop), Strerror(errno));
     }
 }
 
@@ -4183,9 +4245,10 @@ S_init_postdump_symbols(pTHX_ register int argc, register char **argv, register 
 	{
 	    environ[0] = Nullch;
 	}
-	if (env)
+	if (env) {
+          char** origenv = environ;
 	  for (; *env; env++) {
-	    if (!(s = strchr(*env,'=')))
+	    if (!(s = strchr(*env,'=')) || s == *env)
 		continue;
 #if defined(MSDOS) && !defined(DJGPP)
 	    *s = '\0';
@@ -4196,7 +4259,13 @@ S_init_postdump_symbols(pTHX_ register int argc, register char **argv, register 
 	    (void)hv_store(hv, *env, s - *env, sv, 0);
 	    if (env != environ)
 	        mg_set(sv);
+	    if (origenv != environ) {
+	      /* realloc has shifted us */
+	      env = (env - origenv) + environ;
+	      origenv = environ;
+	    }
 	  }
+      }
 #endif /* USE_ENVIRON_ARRAY */
 #endif /* !PERL_MICRO */
     }
@@ -4692,7 +4761,7 @@ Perl_my_failure_exit(pTHX)
 	    STATUS_NATIVE_SET(44);
     }
     else {
-	if (!vaxc$errno && errno)	/* unlikely */
+	if (!vaxc$errno)		/* unlikely */
 	    STATUS_NATIVE_SET(44);
 	else
 	    STATUS_NATIVE_SET(vaxc$errno);

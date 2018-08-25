@@ -7,6 +7,11 @@ BEGIN {
     } else {
 	@INC = '../lib';
     }
+    require Config;
+    if (($Config::Config{'extensions'} !~ /\bB\b/) ){
+        print "1..0 # Skip -- Perl configured without B module\n";
+        exit 0;
+    }
 }
 
 $|  = 1;
@@ -66,7 +71,9 @@ print "# got = @got\n";
 
 $got = "@got";
 
-my $expected = "attributes Carp Carp::Heavy DB Exporter Exporter::Heavy Internals main Regexp utf8 warnings";
+my $expected = "attributes Carp Carp::Heavy DB Exporter Exporter::Heavy Internals main Regexp utf8 version warnings";
+
+$expected =~ s/version // if $] < 5.009;
 
 {
     no strict 'vars';

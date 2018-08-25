@@ -150,6 +150,11 @@ Perl_ithread_destruct (pTHX_ ithread* thread, const char *why)
 	}
 	MUTEX_UNLOCK(&thread->mutex);
 	MUTEX_DESTROY(&thread->mutex);
+#ifdef WIN32
+	if (thread->handle)
+	    CloseHandle(thread->handle);
+	thread->handle = 0;
+#endif
         PerlMemShared_free(thread);
         if (freeperl)
             perl_free(freeperl);
@@ -376,10 +381,20 @@ Perl_ithread_create(pTHX_ SV *obj, char* classname, SV* init_function, SV* param
 
 	SV**            tmps_tmp = PL_tmps_stack;
 	I32             tmps_ix  = PL_tmps_ix;
+#ifndef WIN32
+	int		failure;
+	const char*	panic = NULL;
+#endif
 
 
 	MUTEX_LOCK(&create_destruct_mutex);
 	thread = PerlMemShared_malloc(sizeof(ithread));
+	if (!thread) {	
+	    MUTEX_UNLOCK(&create_destruct_mutex);
+	    PerlLIO_write(PerlIO_fileno(Perl_error_log),
+			  PL_no_mem, strlen(PL_no_mem));
+	    my_exit(1);
+	}
 	Zero(thread,1,ithread);
 	thread->next = threads;
 	thread->prev = threads->prev;
@@ -475,10 +490,8 @@ Perl_ithread_create(pTHX_ SV *obj, char* classname, SV* init_function, SV* param
 	/* Start the thread */
 
 #ifdef WIN32
-
 	thread->handle = CreateThread(NULL, 0, Perl_ithread_run,
 			(LPVOID)thread, 0, &thread->thr);
-
 #else
 	{
 	  static pthread_attr_t attr;
@@ -493,20 +506,40 @@ Perl_ithread_create(pTHX_ SV *obj, char* classname, SV* init_function, SV* param
 #  endif
 #  ifdef THREAD_CREATE_NEEDS_STACK
 	    if(pthread_attr_setstacksize(&attr, THREAD_CREATE_NEEDS_STACK))
-	      Perl_croak(aTHX_ "panic: pthread_attr_setstacksize failed");
+	      panic = "panic: pthread_attr_setstacksize failed";
 #  endif
 
 #ifdef OLD_PTHREADS_API
-	  pthread_create( &thread->thr, attr, Perl_ithread_run, (void *)thread);
+	    failure
+	      = panic ? 1 : pthread_create( &thread->thr, attr,
+					    Perl_ithread_run, (void *)thread);
 #else
 #  if defined(HAS_PTHREAD_ATTR_SETSCOPE) && defined(PTHREAD_SCOPE_SYSTEM)
 	  pthread_attr_setscope( &attr, PTHREAD_SCOPE_SYSTEM );
 #  endif
-	  pthread_create( &thread->thr, &attr, Perl_ithread_run, (void *)thread);
+	  failure
+	    = panic ? 1 : pthread_create( &thread->thr, &attr,
+					  Perl_ithread_run, (void *)thread);
 #endif
 	}
 #endif
 	known_threads++;
+	if (
+#ifdef WIN32
+	    thread->handle == NULL
+#else
+	    failure
+#endif
+	    ) {
+	  MUTEX_UNLOCK(&create_destruct_mutex);
+	  sv_2mortal(params);
+	  Perl_ithread_destruct(aTHX_ thread, "create failed");
+#ifndef WIN32
+	  if (panic)
+	    Perl_croak(aTHX_ panic);
+#endif
+	  return &PL_sv_undef;
+	}
 	active_threads++;
 	MUTEX_UNLOCK(&create_destruct_mutex);
 	sv_2mortal(params);
@@ -566,6 +599,8 @@ Perl_ithread_join(pTHX_ SV *obj)
 	MUTEX_UNLOCK(&thread->mutex);
 #ifdef WIN32
 	waitcode = WaitForSingleObject(thread->handle, INFINITE);
+	CloseHandle(thread->handle);
+	thread->handle = 0;
 #else
 	pthread_join(thread->thr,&retval);
 #endif
@@ -726,6 +761,11 @@ BOOT:
 	MUTEX_LOCK(&create_destruct_mutex);
 	PL_threadhook = &Perl_ithread_hook;
 	thread  = PerlMemShared_malloc(sizeof(ithread));
+	if (!thread) {
+	    PerlLIO_write(PerlIO_fileno(Perl_error_log),
+			  PL_no_mem, strlen(PL_no_mem));
+	    my_exit(1);
+	}
 	Zero(thread,1,ithread);
 	PL_perl_destruct_level = 2;
 	MUTEX_INIT(&thread->mutex);

@@ -55,6 +55,7 @@ my $global_sym  = "global.sym";
 my $pp_sym      = "pp.sym";
 my $globvar_sym = "globvar.sym";
 my $perlio_sym  = "perlio.sym";
+my $static_ext = "";
 
 if ($PLATFORM eq 'aix') {
     # Nothing for now.
@@ -85,6 +86,13 @@ unless ($PLATFORM eq 'win32' || $PLATFORM eq 'wince' || $PLATFORM eq 'MacOS' || 
 	    $ARCHNAME =    $1 if /^archname='(.+)'$/;
 	    $PATCHLEVEL =  $1 if /^perl_patchlevel='(.+)'$/;
 	}
+    }
+    close(CFG);
+}
+if ($PLATFORM eq 'win32' || $PLATFORM eq 'wince') {
+    open(CFG,"<..\\$config_sh") || die "Cannot open ..\\$config_sh: $!\n";
+    if ((join '', <CFG>) =~ /^static_ext='(.*)'$/m) {
+        $static_ext = $1;
     }
     close(CFG);
 }
@@ -1038,6 +1046,7 @@ if ($PLATFORM =~ /^win(?:32|ce)$/) {
 			    win32_pclose
 			    win32_rename
 			    win32_setmode
+			    win32_chsize
 			    win32_lseek
 			    win32_tell
 			    win32_dup
@@ -1343,6 +1352,15 @@ foreach my $symbol (qw(
 	try_symbol($symbol);
     }
 }
+
+# records of type boot_module for statically linked modules (except Dynaloader)
+$static_ext =~ s/\//__/g;
+$static_ext =~ s/\bDynaLoader\b//;
+my @stat_mods = map {"boot_$_"} grep {/\S/} split /\s+/, $static_ext;
+foreach my $symbol (@stat_mods)
+    {
+	try_symbol($symbol);
+    }
 
 # Now all symbols should be defined because
 # next we are going to output them.

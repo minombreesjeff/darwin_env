@@ -900,7 +900,7 @@ if( @path_h ){
             next if $opt_e && $enum_name =~ /$opt_e/;
             my $val = 0;
             for my $item (split /,/, $enum_body) {
-                my ($key, $declared_val) = $item =~ /(\w*)\s*=\s*(.*)/;
+                my ($key, $declared_val) = $item =~ /(\w+)\s*=\s*(.*)/;
                 $val = length($declared_val) ? $declared_val : 1 + $val;
                 $seen_define{$key} = $declared_val;
                 $const_names{$key}++;
@@ -980,6 +980,8 @@ if( ! $opt_X ){  # use XS, unless it was disabled
       $c = new C::Scan 'filename' => $filename, 'filename_filter' => $filter,
 	'add_cppflags' => $addflags, 'c_styles' => \@styles;
       $c->set('includeDirs' => ["$Config::Config{archlib}/CORE", $cwd]);
+
+      $c->get('keywords')->{'__restrict'} = 1;
 
       push @$fdecls_parsed, @{ $c->get('parsed_fdecls') };
       push(@$fdecls, @{$c->get('fdecls')});

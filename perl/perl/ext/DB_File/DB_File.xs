@@ -3,12 +3,12 @@
  DB_File.xs -- Perl 5 interface to Berkeley DB 
 
  written by Paul Marquess <pmqs@cpan.org>
- last modified 22nd December 2003
- version 1.808
+ last modified 7th August 2004
+ version 1.810
 
  All comments/suggestions/problems are welcome
 
-     Copyright (c) 1995-2003 Paul Marquess. All rights reserved.
+     Copyright (c) 1995-2004 Paul Marquess. All rights reserved.
      This program is free software; you can redistribute it and/or
      modify it under the same terms as Perl itself.
 
@@ -108,6 +108,8 @@
         1.806 - recursion detection beefed up.
         1.807 - no change
         1.808 - leak fixed in ParseOpenInfo
+        1.809 - no change
+        1.810 - no change
 
 */
 
@@ -396,8 +398,9 @@ typedef DBT DBTKEY ;
 
 #define OutputValue(arg, name)  					\
 	{ if (RETVAL == 0) {						\
+	      SvGETMAGIC(arg) ;          				\
 	      my_sv_setpvn(arg, name.data, name.size) ;			\
-	      TAINT;                                       	\
+	      TAINT;                                       		\
 	      SvTAINTED_on(arg);                                       	\
 	      SvUTF8_off(arg);                                       	\
 	      DBM_ckFilter(arg, filter_fetch_value,"filter_fetch_value") ; 	\
@@ -407,12 +410,13 @@ typedef DBT DBTKEY ;
 #define OutputKey(arg, name)	 					\
 	{ if (RETVAL == 0) 						\
 	  { 								\
+		SvGETMAGIC(arg) ;          				\
 		if (db->type != DB_RECNO) {				\
 		    my_sv_setpvn(arg, name.data, name.size); 		\
 		}							\
 		else 							\
 		    sv_setiv(arg, (I32)*(I32*)name.data - 1); 		\
-	      TAINT;                                       	\
+	      TAINT;                                       		\
 	      SvTAINTED_on(arg);                                       	\
 	      SvUTF8_off(arg);                                       	\
 	      DBM_ckFilter(arg, filter_fetch_key,"filter_fetch_key") ; 	\
@@ -932,7 +936,10 @@ SV *   sv ;
     STRLEN	n_a;
     dMY_CXT;
 
-/* printf("In ParseOpenInfo name=[%s] flags=[%d] mode = [%d]\n", name, flags, mode) ;  */
+#ifdef TRACE    
+    printf("In ParseOpenInfo name=[%s] flags=[%d] mode=[%d] SV NULL=[%d]\n", 
+		    name, flags, mode, sv == NULL) ;  
+#endif
     Zero(RETVAL, 1, DB_File_type) ;
 
     /* Default to HASH */

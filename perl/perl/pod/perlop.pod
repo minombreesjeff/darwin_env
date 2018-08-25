@@ -144,6 +144,17 @@ value.
     print $i++;  # prints 0
     print ++$j;  # prints 1
 
+Note that just as in C, Perl doesn't define B<when> the variable is
+incremented or decremented. You just know it will be done sometime 
+before or after the value is returned. This also means that modifying
+a variable twice in the same statement will lead to undefined behaviour.
+Avoid statements like:
+
+    $i = $i ++;
+    print ++ $i + $i ++;
+
+Perl will not guarantee what the result of the above statements is.
+
 The auto-increment operator has a little extra builtin magic to it.  If
 you increment a variable that is numeric, or that has ever been used in
 a numeric context, you get a normal increment.  If, however, the
@@ -179,8 +190,8 @@ Unary "-" performs arithmetic negation if the operand is numeric.  If
 the operand is an identifier, a string consisting of a minus sign
 concatenated with the identifier is returned.  Otherwise, if the string
 starts with a plus or minus, a string starting with the opposite sign
-is returned.  One effect of these rules is that C<-bareword> is equivalent
-to C<"-bareword">.
+is returned.  One effect of these rules is that -bareword is equivalent
+to "-bareword".
 
 Unary "~" performs bitwise negation, i.e., 1's complement.  For
 example, C<0666 & ~027> is 0640.  (See also L<Integer Arithmetic> and
@@ -208,7 +219,8 @@ pattern, substitution, or transliteration.  The left argument is what is
 supposed to be searched, substituted, or transliterated instead of the default
 $_.  When used in scalar context, the return value generally indicates the
 success of the operation.  Behavior in list context depends on the particular
-operator.  See L</"Regexp Quote-Like Operators"> for details.
+operator.  See L</"Regexp Quote-Like Operators"> for details and 
+L<perlretut> for examples using these operators.
 
 If the right argument is an expression rather than a search pattern,
 substitution, or transliteration, it is interpreted as a search pattern at run
@@ -521,7 +533,27 @@ As a scalar operator:
         close ARGV if eof;             # reset $. each file
     }
 
-As a list operator:
+Here's a simple example to illustrate the difference between
+the two range operators:
+
+    @lines = ("   - Foo",
+              "01 - Bar",
+              "1  - Baz",
+              "   - Quux");
+
+    foreach(@lines)
+    {
+        if (/0/ .. /1/)
+        {
+            print "$_\n";
+        }
+    }
+
+This program will print only the line containing "Bar". If 
+the range operator is changed to C<...>, it will also print the 
+"Baz" line.
+
+And now some examples as a list operator:
 
     for (101 .. 200) { print; }	# print $_ 100 times
     @foo = @foo[0 .. $#foo];	# an expensive no-op
@@ -2002,6 +2034,14 @@ you say
 
 the compiler will precompute the number which that expression
 represents so that the interpreter won't have to.
+
+=head2 No-ops
+
+Perl doesn't officially have a no-op operator, but the bare constants
+C<0> and C<1> are special-cased to not produce a warning in a void
+context, so you can for example safely do
+
+    1 while foo();
 
 =head2 Bitwise String Operators
 

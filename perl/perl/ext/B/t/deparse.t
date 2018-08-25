@@ -8,6 +8,11 @@ BEGIN {
 	@INC = '.';
 	push @INC, '../lib';
     }
+    require Config;
+    if (($Config::Config{'extensions'} !~ /\bB\b/) ){
+        print "1..0 # Skip -- Perl configured without B module\n";
+        exit 0;
+    }
 }
 
 $|  = 1;
@@ -15,7 +20,7 @@ use warnings;
 use strict;
 use Config;
 
-print "1..32\n";
+print "1..37\n";
 
 use B::Deparse;
 my $deparse = B::Deparse->new() or print "not ";
@@ -207,9 +212,7 @@ my ($x,@a);
 $x=1 for @a;
 >>>>
 my($x, @a);
-foreach $_ (@a) {
-    $x = 1;
-}
+$x = 1 foreach (@a);
 ####
 # 19
 for (my $i = 0; $i < 2;) {
@@ -262,3 +265,23 @@ my $i;
 foreach our $i (1, 2) {
     my $z = 1;
 }
+####
+# 29
+my @x;
+print reverse sort(@x);
+####
+# 30
+my @x;
+print((sort {$b cmp $a} @x));
+####
+# 31
+my @x;
+print((reverse sort {$b <=> $a} @x));
+####
+# 32
+our @a;
+print $_ foreach (reverse @a);
+####
+# 32
+our @a;
+print $_ foreach (reverse 1, 2..5);

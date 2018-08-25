@@ -14,6 +14,16 @@
 
 /* 
 =head1 Hash Manipulation Functions
+
+A HV structure represents a Perl hash. It consists mainly of an array
+of pointers, each of which points to a linked list of HE structures. The
+array is indexed by the hash function of the key, so each linked list
+represents all the hash entries with the same hash value. Each HE contains
+a pointer to the actual value, plus a pointer to a HEK structure which
+holds the key and hash value.
+
+=cut
+
 */
 
 #include "EXTERN.h"
@@ -218,7 +228,7 @@ Perl_hv_store(pTHX_ HV *hv, const char *key, I32 klen_i32, SV *val, U32 hash)
 	flags = 0;
     }
     hek = hv_fetch_common (hv, NULL, key, klen, flags,
-			   (HV_FETCH_ISSTORE|HV_FETCH_JUST_SV), val, 0);
+			   (HV_FETCH_ISSTORE|HV_FETCH_JUST_SV), val, hash);
     return hek ? &HeVAL(hek) : NULL;
 }
 
@@ -505,6 +515,7 @@ S_hv_fetch_common(pTHX_ HV *hv, SV *keysv, const char *key, STRLEN klen,
 		key = (const char*)strupr((char*)key);
 		is_utf8 = 0;
 		hash = 0;
+		keysv = 0;
 
 		if (flags & HVhek_FREEKEY) {
 		    Safefree(keysave);
@@ -547,6 +558,7 @@ S_hv_fetch_common(pTHX_ HV *hv, SV *keysv, const char *key, STRLEN klen,
 		    key = (const char*)strupr((char*)key);
 		    is_utf8 = 0;
 		    hash = 0;
+		    keysv = 0;
 
 		    if (flags & HVhek_FREEKEY) {
 			Safefree(keysave);
@@ -1490,7 +1502,7 @@ Clears any placeholders from a hash.  If a restricted hash has any of its keys
 marked as readonly and the key is subsequently deleted, the key is not actually
 deleted but is marked by assigning it a value of &PL_sv_placeholder.  This tags
 it so it will be ignored by future operations such as iterating over the hash,
-but will still allow the hash to have a value reaasigned to the key at some
+but will still allow the hash to have a value reassigned to the key at some
 future point.  This function clears any such placeholder keys from the hash.
 See Hash::Util::lock_keys() for an example of its use.
 
@@ -2021,9 +2033,10 @@ S_unshare_hek_or_pvn(pTHX_ HEK *hek, const char *str, I32 len, U32 hash)
     UNLOCK_STRTAB_MUTEX;
     if (!found && ckWARN_d(WARN_INTERNAL))
 	Perl_warner(aTHX_ packWARN(WARN_INTERNAL),
-                    "Attempt to free non-existent shared string '%s'%s",
+                    "Attempt to free non-existent shared string '%s'%s"
+                    pTHX__FORMAT,
                     hek ? HEK_KEY(hek) : str,
-                    (k_flags & HVhek_UTF8) ? " (utf8)" : "");
+                    ((k_flags & HVhek_UTF8) ? " (utf8)" : "") pTHX__VALUE);
     if (k_flags & HVhek_FREEKEY)
 	Safefree(str);
 }

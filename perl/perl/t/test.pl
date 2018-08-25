@@ -5,6 +5,7 @@
 $Level = 1;
 my $test = 1;
 my $planned;
+my $noplan;
 
 $TODO = 0;
 $NO_ENDING = 0;
@@ -13,18 +14,27 @@ sub plan {
     my $n;
     if (@_ == 1) {
 	$n = shift;
+	if ($n eq 'no_plan') {
+	  undef $n;
+	  $noplan = 1;
+	}
     } else {
 	my %plan = @_;
 	$n = $plan{tests}; 
     }
-    print STDOUT "1..$n\n";
+    print STDOUT "1..$n\n" unless $noplan;
     $planned = $n;
 }
 
 END {
     my $ran = $test - 1;
-    if (!$NO_ENDING && defined $planned && $planned != $ran) {
-        print STDERR "# Looks like you planned $planned tests but ran $ran.\n";
+    if (!$NO_ENDING) {
+	if (defined $planned && $planned != $ran) {
+	    print STDERR
+		"# Looks like you planned $planned tests but ran $ran.\n";
+	} elsif ($noplan) {
+	    print "1..$ran\n";
+	}
     }
 }
 
@@ -235,21 +245,18 @@ sub within ($$$@) {
 }
 
 # Note: this isn't quite as fancy as Test::More::like().
-sub like ($$@) {
-    my ($got, $expected, $name, @mess) = @_;
+
+sub like   ($$@) { like_yn (0,@_) }; # 0 for -
+sub unlike ($$@) { like_yn (1,@_) }; # 1 for un-
+
+sub like_yn ($$$@) {
+    my ($flip, $got, $expected, $name, @mess) = @_;
     my $pass;
-    if (ref $expected eq 'Regexp') {
-	$pass = $got =~ $expected;
-	unless ($pass) {
-	    unshift(@mess, "#      got '$got'\n",
-		           "# expected /$expected/\n");
-	}
-    } else {
-	$pass = $got =~ /$expected/;
-	unless ($pass) {
-	    unshift(@mess, "#      got '$got'\n",
-		           "# expected /$expected/\n");
-	}
+    $pass = $got =~ /$expected/ if !$flip;
+    $pass = $got !~ /$expected/ if $flip;
+    unless ($pass) {
+	unshift(@mess, "#      got '$got'\n",
+		"# expected /$expected/\n");
     }
     _ok($pass, _where(), $name, @mess);
 }
@@ -288,6 +295,9 @@ sub eq_array {
     my ($ra, $rb) = @_;
     return 0 unless $#$ra == $#$rb;
     for my $i (0..$#$ra) {
+	next     if !defined $ra->[$i] && !defined $rb->[$i]; 
+	return 0 if !defined $ra->[$i];
+	return 0 if !defined $rb->[$i];
 	return 0 unless $ra->[$i] eq $rb->[$i];
     }
     return 1;

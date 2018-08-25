@@ -2094,7 +2094,34 @@ IPs that the connection might have come in on.
 
 =item getsockopt SOCKET,LEVEL,OPTNAME
 
-Returns the socket option requested, or undef if there is an error.
+Queries the option named OPTNAME associated with SOCKET at a given LEVEL.
+Options may exist at multiple protocol levels depending on the socket
+type, but at least the uppermost socket level SOL_SOCKET (defined in the
+C<Socket> module) will exist. To query options at another level the
+protocol number of the appropriate protocol controlling the option
+should be supplied. For example, to indicate that an option is to be
+interpreted by the TCP protocol, LEVEL should be set to the protocol
+number of TCP, which you can get using getprotobyname.
+
+The call returns a packed string representing the requested socket option,
+or C<undef> if there is an error (the error reason will be in $!). What
+exactly is in the packed string depends in the LEVEL and OPTNAME, consult
+your system documentation for details. A very common case however is that
+the option is an integer, in which case the result will be an packed
+integer which you can decode using unpack with the C<i> (or C<I>) format.
+
+An example testing if Nagle's algorithm is turned on on a socket:
+
+    use Socket;
+
+    defined(my $tcp = getprotobyname("tcp"))
+	or die "Could not determine the protocol number for tcp";
+    # my $tcp = Socket::IPPROTO_TCP; # Alternative
+    my $packed = getsockopt($socket, $tcp, Socket::TCP_NODELAY)
+	or die "Could not query TCP_NODELAY SOCKEt option: $!";
+    my $nodelay = unpack("I", $packed);
+    print "Nagle's algorithm is turned ", $nodelay ? "off\n" : "on\n";
+
 
 =item glob EXPR
 
@@ -2895,7 +2922,9 @@ works for symmetry, but you really should consider writing something
 to the temporary file first.  You will need to seek() to do the
 reading.
 
-File handles can be opened to "in memory" files held in Perl scalars via:
+Since v5.8.0, perl has built using PerlIO by default.  Unless you've
+changed this (ie Configure -Uuseperlio), you can open file handles to
+"in memory" files held in Perl scalars via:
 
     open($fh, '>', \$variable) || ..
 
@@ -2957,6 +2986,8 @@ Examples:
 	    #...		# whatever
 	}
     }
+
+See L<perliol/> for detailed info on PerlIO.
 
 You may also, in the Bourne shell tradition, specify an EXPR beginning
 with C<< '>&' >>, in which case the rest of the string is interpreted
@@ -3716,9 +3747,14 @@ array in subroutines, just like C<shift>.
 =item pos
 
 Returns the offset of where the last C<m//g> search left off for the variable
-in question (C<$_> is used when the variable is not specified).  May be
-modified to change that offset.  Such modification will also influence
-the C<\G> zero-width assertion in regular expressions.  See L<perlre> and
+in question (C<$_> is used when the variable is not specified).  Note that
+0 is a valid match offset, while C<undef> indicates that the search position
+is reset (usually due to match failure, but can also be because no match has
+yet been performed on the scalar). C<pos> directly accesses the location used
+by the regexp engine to store the offset, so assigning to C<pos> will change
+that offset, and so will also influence the C<\G> zero-width assertion in
+regular expressions. Because a failed C<m//gc> match doesn't reset the offset,
+the return from C<pos> won't change either in this case.  See L<perlre> and
 L<perlop>.
 
 =item print FILEHANDLE LIST
@@ -4438,7 +4474,8 @@ You can effect a sleep of 250 milliseconds this way:
     select(undef, undef, undef, 0.25);
 
 Note that whether C<select> gets restarted after signals (say, SIGALRM)
-is implementation-dependent.
+is implementation-dependent.  See also L<perlport> for notes on the
+portability of C<select>.
 
 B<WARNING>: One should not attempt to mix buffered I/O (like C<read>
 or <FH>) with C<select>, except as permitted by POSIX, and even
@@ -4873,7 +4910,7 @@ Example, assuming array lengths are passed before arrays:
 
 Splits the string EXPR into a list of strings and returns that list.  By
 default, empty leading fields are preserved, and empty trailing ones are
-deleted.
+deleted.  (If all fields are empty, they are considered to be trailing.)
 
 In scalar context, returns the number of fields found and splits into
 the C<@_> array.  Use of split in scalar context is deprecated, however,
@@ -5351,9 +5388,9 @@ meanings of the fields:
 
 (The epoch was at 00:00 January 1, 1970 GMT.)
 
-(*) The ctime field is non-portable.  In particular, you cannot expect
-it to be a "creation time", see L<perlport/"Files and Filesystems">
-for details.
+(*) Not all fields are supported on all filesystem types. Notably, the
+ctime field is non-portable.  In particular, you cannot expect it to be a
+"creation time", see L<perlport/"Files and Filesystems"> for details.
 
 If C<stat> is passed the special filehandle consisting of an underline, no
 stat is done, but the current contents of the stat structure from the
@@ -5631,7 +5668,7 @@ using the C<|>-operator.
 
 Some of the most common values are C<O_RDONLY> for opening the file in
 read-only mode, C<O_WRONLY> for opening the file in write-only mode,
-and C<O_RDWR> for opening the file in read-write mode, and.
+and C<O_RDWR> for opening the file in read-write mode.
 
 For historical reasons, some values work on almost every system
 supported by perl: zero means read-only, one means write-only, and two
@@ -5648,10 +5685,15 @@ process's current C<umask>.
 
 In many systems the C<O_EXCL> flag is available for opening files in
 exclusive mode.  This is B<not> locking: exclusiveness means here that
-if the file already exists, sysopen() fails.  The C<O_EXCL> wins
-C<O_TRUNC>.
+if the file already exists, sysopen() fails.  C<O_EXCL> may not work
+on network filesystems, and has no effect unless the C<O_CREAT> flag
+is set as well.  Setting C<O_CREAT|O_EXCL> prevents the file from
+being opened if it is a symbolic link.  It does not protect against
+symbolic links in the file's path.
 
-Sometimes you may want to truncate an already-existing file: C<O_TRUNC>.
+Sometimes you may want to truncate an already-existing file.  This
+can be done using the C<O_TRUNC> flag.  The behavior of
+C<O_TRUNC> with C<O_RDONLY> is undefined.
 
 You should seldom if ever use C<0644> as argument to C<sysopen>, because
 that takes away the user's option to have a more permissive umask.
@@ -5840,11 +5882,9 @@ tell() on pipes, fifos, and sockets usually returns -1.
 
 There is no C<systell> function.  Use C<sysseek(FH, 0, 1)> for that.
 
-Do not use tell() on a filehandle that has been opened using
-sysopen(), use sysseek() for that as described above.  Why?  Because
-sysopen() creates unbuffered, "raw", filehandles, while open() creates
-buffered filehandles.  sysseek() make sense only on the first kind,
-tell() only makes sense on the second kind.
+Do not use tell() (or other buffered I/O operations) on a file handle
+that has been manipulated by sysread(), syswrite() or sysseek().
+Those functions ignore the buffering, while tell() does not.
 
 =item telldir DIRHANDLE
 
@@ -5954,9 +5994,10 @@ package.
 =item time
 
 Returns the number of non-leap seconds since whatever time the system
-considers to be the epoch (that's 00:00:00, January 1, 1904 for Mac OS,
-and 00:00:00 UTC, January 1, 1970 for most other systems).
-Suitable for feeding to C<gmtime> and C<localtime>.
+considers to be the epoch, suitable for feeding to C<gmtime> and
+C<localtime>. On most systems the epoch is 00:00:00 UTC, January 1, 1970;
+a prominent exception being Mac OS Classic which uses 00:00:00, January 1,
+1904 in the current local time zone for its epoch.
 
 For measuring time in better granularity than one second,
 you may use either the Time::HiRes module (from CPAN, and starting from
@@ -6270,7 +6311,8 @@ files.  The first two elements of the list must be the NUMERICAL access
 and modification times, in that order.  Returns the number of files
 successfully changed.  The inode change time of each file is set
 to the current time.  For example, this code has the same effect as the
-Unix touch(1) command when the files I<already exist>.
+Unix touch(1) command when the files I<already exist> and belong to
+the user running the program:
 
     #!/usr/bin/perl
     $atime = $mtime = time;
@@ -6280,7 +6322,8 @@ Since perl 5.7.2, if the first two elements of the list are C<undef>, then
 the utime(2) function in the C library will be called with a null second
 argument. On most systems, this will set the file's access and
 modification times to the current time (i.e. equivalent to the example
-above.)
+above) and will even work on other users' files where you have write
+permission:
 
     utime undef, undef, @ARGV;
 

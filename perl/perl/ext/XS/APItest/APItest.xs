@@ -175,3 +175,160 @@ void
 print_flush()
     	CODE:
 	fflush(stdout);
+
+void
+mpushp()
+	PPCODE:
+	EXTEND(SP, 3);
+	mPUSHp("one", 3);
+	mPUSHp("two", 3);
+	mPUSHp("three", 5);
+	XSRETURN(3);
+
+void
+mpushn()
+	PPCODE:
+	EXTEND(SP, 3);
+	mPUSHn(0.5);
+	mPUSHn(-0.25);
+	mPUSHn(0.125);
+	XSRETURN(3);
+
+void
+mpushi()
+	PPCODE:
+	EXTEND(SP, 3);
+	mPUSHi(-1);
+	mPUSHi(2);
+	mPUSHi(-3);
+	XSRETURN(3);
+
+void
+mpushu()
+	PPCODE:
+	EXTEND(SP, 3);
+	mPUSHu(1);
+	mPUSHu(2);
+	mPUSHu(3);
+	XSRETURN(3);
+
+void
+mxpushp()
+	PPCODE:
+	mXPUSHp("one", 3);
+	mXPUSHp("two", 3);
+	mXPUSHp("three", 5);
+	XSRETURN(3);
+
+void
+mxpushn()
+	PPCODE:
+	mXPUSHn(0.5);
+	mXPUSHn(-0.25);
+	mXPUSHn(0.125);
+	XSRETURN(3);
+
+void
+mxpushi()
+	PPCODE:
+	mXPUSHi(-1);
+	mXPUSHi(2);
+	mXPUSHi(-3);
+	XSRETURN(3);
+
+void
+mxpushu()
+	PPCODE:
+	mXPUSHu(1);
+	mXPUSHu(2);
+	mXPUSHu(3);
+	XSRETURN(3);
+
+
+void
+call_sv(sv, flags, ...)
+    SV* sv
+    I32 flags
+    PREINIT:
+	I32 i;
+    PPCODE:
+	for (i=0; i<items-2; i++)
+	    ST(i) = ST(i+2); /* pop first two args */
+	PUSHMARK(SP);
+	SP += items - 2;
+	PUTBACK;
+	i = call_sv(sv, flags);
+	SPAGAIN;
+	EXTEND(SP, 1);
+	PUSHs(sv_2mortal(newSViv(i)));
+
+void
+call_pv(subname, flags, ...)
+    char* subname
+    I32 flags
+    PREINIT:
+	I32 i;
+    PPCODE:
+	for (i=0; i<items-2; i++)
+	    ST(i) = ST(i+2); /* pop first two args */
+	PUSHMARK(SP);
+	SP += items - 2;
+	PUTBACK;
+	i = call_pv(subname, flags);
+	SPAGAIN;
+	EXTEND(SP, 1);
+	PUSHs(sv_2mortal(newSViv(i)));
+
+void
+call_method(methname, flags, ...)
+    char* methname
+    I32 flags
+    PREINIT:
+	I32 i;
+    PPCODE:
+	for (i=0; i<items-2; i++)
+	    ST(i) = ST(i+2); /* pop first two args */
+	PUSHMARK(SP);
+	SP += items - 2;
+	PUTBACK;
+	i = call_method(methname, flags);
+	SPAGAIN;
+	EXTEND(SP, 1);
+	PUSHs(sv_2mortal(newSViv(i)));
+
+void
+eval_sv(sv, flags)
+    SV* sv
+    I32 flags
+    PREINIT:
+    	I32 i;
+    PPCODE:
+	PUTBACK;
+	i = eval_sv(sv, flags);
+	SPAGAIN;
+	EXTEND(SP, 1);
+	PUSHs(sv_2mortal(newSViv(i)));
+
+SV*
+eval_pv(p, croak_on_error)
+    const char* p
+    I32 croak_on_error
+    PREINIT:
+    	I32 i;
+    PPCODE:
+	PUTBACK;
+	EXTEND(SP, 1);
+	PUSHs(eval_pv(p, croak_on_error));
+
+void
+require_pv(pv)
+    const char* pv
+    PREINIT:
+    	I32 i;
+    PPCODE:
+	PUTBACK;
+	require_pv(pv);
+
+
+
+

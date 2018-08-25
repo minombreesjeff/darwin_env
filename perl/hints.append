@@ -22,3 +22,4 @@ installusrbinperl='define'
 usevendorprefix='define'
 d_poll='undef'
 i_poll='undef'
+dlsrc=dl_dlopen.xs

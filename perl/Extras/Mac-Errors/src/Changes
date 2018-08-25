@@ -1,0 +1,24 @@
+Revision history for Perl extension Mac::Errors.
+
+0.91	Thu Mar 20 09:16:30 2003 (Andy Lester)
+	- Dropped dependencies on many modules
+	- Fixed export of $MacError (Thanks, Chris)
+	- Beefed up tests a bit (Ditto)
+
+0.9	Mon Nov  4 21:13:49 CST 2002
+	- cleaned up distribution
+	- added macerror script from Chris Nandor
+	- man pages install correctly
+	- no code changes otherwise
+	
+0.07 Tue Oct  8 18:04:48 CDT 2002
+	- added $MacError magic to translate MacPerl $^E
+	to error description
+
+0.06  Thu Sep 26 02:38:29 CDT 2002
+	-	added %MacErrors exportable hash
+
+0.01  Mon Sep  9 21:17:48 2002
+	- original version; created by h2xs 1.21 with options
+		Mac::Errors
+

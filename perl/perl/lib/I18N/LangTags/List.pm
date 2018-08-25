@@ -1,10 +1,10 @@
 
 require 5;
 package I18N::LangTags::List;
-#  Time-stamp: "2003-10-10 17:39:45 ADT"
+#  Time-stamp: "2004-10-06 23:26:21 ADT"
 use strict;
 use vars qw(%Name %Is_Disrec $Debug $VERSION);
-$VERSION = '0.29';
+$VERSION = '0.35';
 # POD at the end.
 
 #----------------------------------------------------------------------
@@ -136,7 +136,7 @@ prints:
 
 =head1 DESCRIPTION
 
-This module provides a function
+This module provides a function 
 C<I18N::LangTags::List::name( I<langtag> ) > that takes
 a language tag (see L<I18N::LangTags|I18N::LangTags>)
 and returns the best attempt at an English name for it, or
@@ -162,7 +162,7 @@ Internet language tags, as defined in RFC 3066, are a formalism
 for denoting human languages.  The two-letter ISO 639-1 language
 codes are well known (as "en" for English), as are their forms
 when qualified by a country code ("en-US").  Less well-known are the
-arbitrary-length non-ISO codes (like "i-mingo"), and the
+arbitrary-length non-ISO codes (like "i-mingo"), and the 
 recently (in 2001) introduced three-letter ISO-639-2 codes.
 
 Remember these important facts:
@@ -1715,7 +1715,7 @@ L<I18N::LangTags|I18N::LangTags> and its "See Also" section.
 
 =head1 COPYRIGHT AND DISCLAIMER
 
-Copyright (c) 2001,2002,2003 Sean M. Burke. All rights reserved.
+Copyright (c) 2001+ Sean M. Burke. All rights reserved.
 
 You can redistribute and/or
 modify this document under the same terms as Perl itself.

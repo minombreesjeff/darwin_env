@@ -15,6 +15,11 @@
  * chattering, into calmer and more level reaches."
  */
 
+/* This file contains functions that do the actual I/O on behalf of ops.
+ * For example, pp_print() calls the do_print() function in this file for
+ * each argument needing printing.
+ */
+
 #include "EXTERN.h"
 #define PERL_IN_DOIO_C
 #include "perl.h"
@@ -1172,6 +1177,7 @@ fail_discipline:
 #ifndef PERLIO_LAYERS
 		Perl_croak(aTHX_ "IO layers (like '%.*s') unavailable", end-s, s);
 #else
+		len -= end-s;
 		s = end;
 #endif
 	    }

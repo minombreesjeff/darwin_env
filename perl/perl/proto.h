@@ -1195,7 +1195,7 @@ STATIC void	S_del_xpvbm(pTHX_ XPVBM* p);
 STATIC void	S_del_xrv(pTHX_ XRV* p);
 STATIC void	S_sv_unglob(pTHX_ SV* sv);
 STATIC void	S_not_a_number(pTHX_ SV *sv);
-STATIC I32	S_visit(pTHX_ SVFUNC_t f);
+STATIC I32	S_visit(pTHX_ SVFUNC_t f, U32 flags, U32 mask);
 STATIC void	S_sv_add_backref(pTHX_ SV *tsv, SV *sv);
 STATIC void	S_sv_del_backref(pTHX_ SV *sv);
 #  ifdef DEBUGGING
@@ -1363,4 +1363,7 @@ STATIC HE*	S_hv_fetch_common(pTHX_ HV* tb, SV* key_sv, const char* key, STRLEN k
 PERL_CALLCONV SV*	Perl_hv_scalar(pTHX_ HV* hv);
 PERL_CALLCONV SV*	Perl_magic_scalarpack(pTHX_ HV* hv, MAGIC*	mg);
 
+#if defined(DEBUGGING)
+PERL_CALLCONV int	Perl_get_debug_opts_flags(pTHX_ char **s, int flags);
+#endif
 END_EXTERN_C

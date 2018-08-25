@@ -19,6 +19,15 @@
 
 /*
 =head1 GV Functions
+
+A GV is a structure which corresponds to to a Perl typeglob, ie *foo.
+It is a structure that holds a pointer to a scalar, an array, a hash etc,
+corresponding to $foo, @foo, %foo.
+
+GVs are usually found as values in stashes (symbol table hashes) where
+Perl stores its global variables.
+
+=cut
 */
 
 #include "EXTERN.h"
@@ -1084,7 +1093,7 @@ Perl_gv_fullname4(pTHX_ SV *sv, GV *gv, const char *prefix, bool keepmain)
 {
     HV *hv = GvSTASH(gv);
     if (!hv) {
-	(void)SvOK_off(sv);
+	SvOK_off(sv);
 	return;
     }
     sv_setpv(sv, prefix ? prefix : "");
@@ -1242,7 +1251,8 @@ Perl_gp_free(pTHX_ GV *gv)
     if (gp->gp_refcnt == 0) {
 	if (ckWARN_d(WARN_INTERNAL))
 	    Perl_warner(aTHX_ packWARN(WARN_INTERNAL),
-			"Attempt to free unreferenced glob pointers");
+			"Attempt to free unreferenced glob pointers"
+                        pTHX__FORMAT pTHX__VALUE);
         return;
     }
     if (gp->gp_cv) {
@@ -1256,7 +1266,7 @@ Perl_gp_free(pTHX_ GV *gv)
     }
 
     if (gp->gp_sv) SvREFCNT_dec(gp->gp_sv);
-    if (gp->gp_sv) SvREFCNT_dec(gp->gp_av);
+    if (gp->gp_av) SvREFCNT_dec(gp->gp_av);
     if (gp->gp_hv) {
 	 if (PL_stashcache && HvNAME(gp->gp_hv))
 	      hv_delete(PL_stashcache,

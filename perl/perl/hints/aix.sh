@@ -39,10 +39,10 @@ case "$usemymalloc" in
     '')  usemymalloc='n' ;;
     esac
 
-# malloc wrap works
+# malloc wrap works, but not in vac-5, see later
 case "$usemallocwrap" in
-'') usemallocwrap='define' ;;
-esac
+    '') usemallocwrap='define' ;;
+    esac
 
 # Intuiting the existence of system calls under AIX is difficult,
 # at best; the safest technique is to find them empirically.
@@ -143,6 +143,9 @@ case "$cc" in
 
 	ccversion=`echo "$ccversion" | awk '{print $2}'`
 	# Redbooks state AIX-5 only supports vac-5.0.2.0 and up
+	case "$ccversion" in
+	    5*) usemallocwrap='n' ;; # panic in miniperl
+	    esac
 	;;
     esac
 
@@ -154,7 +157,11 @@ case "$cc" in
 # -bI:$(PERL_INC)/perl.exp  Read the exported symbols from the perl binary
 # -bE:$(BASEEXT).exp	    Export these symbols.  This file contains only one
 #			    symbol: boot_$(EXP)	 can it be auto-generated?
-lddlflags="$lddlflags -bhalt:4 -bM:SRE -bI:\$(PERL_INC)/perl.exp -bE:\$(BASEEXT).exp -bnoentry -lc"
+if test $usenativedlopen = 'true' ; then
+    lddlflags="$lddlflags -bhalt:4 -bexpall -G -bnoentry -lc"
+else
+    lddlflags="$lddlflags -bhalt:4 -bM:SRE -bI:\$(PERL_INC)/perl.exp -bE:\$(BASEEXT).exp -bnoentry -lc"
+    fi
 
 case "$use64bitall" in
     $define|true|[yY]*) use64bitint="$define" ;;
@@ -228,17 +235,26 @@ case "$usethreads" in
 	    *gcc*) ccflags="-D_THREAD_SAFE $ccflags" ;;
 
 	    cc_r) ;;
-	    cc|xl[cC]|xl[cC]_r)
+	    '') cc=cc_r ;;
+
+	    *)
+
+
+	    # No | alternation in aix sed. :-(
+	    newcc=`echo $cc | sed -e 's/cc$/cc_r/' -e 's/xl[cC]$/cc_r/' -e 's/xl[cC]_r$/cc_r/'`
+	    case "$newcc" in
+		$cc) # No change
+		;;
+
+		*cc_r)
 		echo >&4 "Switching cc to cc_r because of POSIX threads."
 		# xlc_r has been known to produce buggy code in AIX 4.3.2.
 		# (e.g. pragma/overload core dumps)	 Let's suspect xlC_r, too.
 		# --jhi@iki.fi
-		cc=cc_r
+		cc="$newcc"
 		;;
 
-	    '') cc=cc_r ;;
-
-	    *)
+		*)
 		cat >&4 <<EOM
 *** For pthreads you should use the AIX C compiler cc_r.
 *** (now your compiler was set to '$cc')
@@ -247,6 +263,7 @@ EOM
 		exit 1
 		;;
 	    esac
+	esac
 
 	# Insert pthreads to libswanted, before any libc or libC.
 	set `echo X "$libswanted "| sed -e 's/ \([cC]\) / pthreads \1 /'`
@@ -301,7 +318,11 @@ libswanted_uselargefiles="`getconf XBS5_ILP32_OFFBIG_LIBS 2>/dev/null|sed -e 's@
 		ccflags="`echo $ccflags | sed -e 's@ -b@ -Wl,-b@g'`"
 		ldflags="`echo ' '$ldflags | sed -e 's@ -b@ -Wl,-b@g'`"
 		lddlflags="`echo ' '$lddlflags | sed -e 's@ -b@ -Wl,-b@g'`"
-		ld='gcc'
+		lddlflags="`echo ' '$lddlflags | sed -e 's@ -G @ -Wl,-G @g'`"
+		case "$use64bitall" in
+		    $define|true|[yY]*) ld="gcc -maix64"	;;
+		    *)			ld="gcc"		;;
+		    esac
 		echo >&4 "(using ccflags   $ccflags)"
 		echo >&4 "(using ldflags   $ldflags)"
 		echo >&4 "(using lddlflags $lddlflags)"
@@ -366,6 +387,13 @@ EOM
 	# Remove them.
 	ccflags="`echo $ccflags | sed -e 's@-q32@@'`"
 	ldflags="`echo $ldflags | sed -e 's@-b32@@'`"
+	case "$cc" in
+	    *gcc*)
+		ccflags="`echo $ccflags | sed -e 's@-q64@-maix64@'`"
+		ccflags_uselargefiles="`echo $ccflags_uselargefiles | sed -e 's@-q64@-maix64@'`"
+		qacflags="`echo $qacflags | sed -e 's@-q64@-maix64@'`"
+		;;
+	    esac
 	# Tell archiver to use large format.  Unless we remove 'ar'
 	# from 'trylist', the Configure script will just reset it to 'ar'
 	# immediately prior to writing config.sh.  This took me hours
@@ -402,9 +430,19 @@ EOCBU
 
 if test $usenativedlopen = 'true' ; then
     ccflags="$ccflags -DUSE_NATIVE_DLOPEN"
+    # -brtl		    Enables a binary to use run time linking
+    # -bdynamic		    When used with -brtl, tells linker to search for
+    #			    ".so"-suffix libraries as well as ".a" suffix
+    #			    libraries. AIX allows both .so and .a libraries to
+    #			    contain dynamic shared objects.
+    # -bmaxdata:0x80000000  This increases the size of heap memory available
+    #			    to perl. Default is 256 MB, which sounds large but
+    #			    caused a software vendor problems. So this sets
+    #			    heap to 2 GB maximum. Anything higher and you'd
+    #			    want to consider 64 bit perl.
     case "$cc" in
-	*gcc*) ldflags="$ldflags -Wl,-brtl" ;;
-	*)     ldflags="$ldflags -brtl" ;;
+	*gcc*) ldflags="$ldflags -Wl,-brtl -Wl,-bdynamic -Wl,-bmaxdata:0x80000000" ;;
+	*)     ldflags="$ldflags -brtl -bdynamic -bmaxdata:0x80000000" ;;
 	esac
 elif test -f /lib/libC.a -a X"`$cc -v 2>&1 | grep gcc`" = X; then
     # If the C++ libraries, libC and libC_r, are available we will

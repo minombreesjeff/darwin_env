@@ -7,10 +7,15 @@ BEGIN {
 	print "1..0 # Skip: not perlio\n";
 	exit 0;
     }
+    require Config;
+    if (($Config::Config{'extensions'} !~ m!\bPerlIO/scalar\b!) ){
+        print "1..0 # Skip -- Perl configured without PerlIO::scalar module\n";
+        exit 0;
+    }
 }
 
 $| = 1;
-print "1..25\n";
+print "1..26\n";
 
 my $fh;
 my $var = "ok 2\n";
@@ -138,3 +143,9 @@ print <$fh>;
     close $fh;
     print $ok ? "ok 25\n" : "not ok 25\n";
 }
+
+my $data = "a non-empty PV";
+$data = undef;
+open(MEM, '<', \$data) or die "Fail: $!\n";
+my $x = join '', <MEM>;
+print $x eq '' ? "ok 26\n" : "not ok 26\n";
