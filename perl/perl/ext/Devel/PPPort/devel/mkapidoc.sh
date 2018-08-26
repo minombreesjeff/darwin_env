@@ -5,13 +5,13 @@
 #
 ################################################################################
 #
-#  $Revision: 4 $
+#  $Revision: 7 $
 #  $Author: mhx $
-#  $Date: 2004/08/13 12:50:22 +0200 $
+#  $Date: 2005/03/10 18:21:59 +0100 $
 #
 ################################################################################
 #
-#  Version 3.x, Copyright (C) 2004, Marcus Holland-Moritz.
+#  Version 3.x, Copyright (C) 2004-2005, Marcus Holland-Moritz.
 #  Version 2.x, Copyright (C) 2001, Paul Marquess.
 #  Version 1.x, Copyright (C) 1999, Kenneth Albanowski.
 #
@@ -62,9 +62,9 @@ else
 fi
 
 if isperlroot $PERLROOT; then
-  grep -hr '=for apidoc' $PERLROOT | sed -e 's/=for apidoc //' | grep '|' | sort | uniq \
+  grep -hr '^=for apidoc' $PERLROOT | sed -e 's/=for apidoc //' | grep '|' | sort | uniq \
      | perl -e'$f=pop;open(F,$f)||die"$f:$!";while(<F>){(split/\|/)[2]=~/(\w+)/;$h{$1}++}
-               while(<>){(split/\|/)[2]=~/(\w+)/;$h{$1}||print}' $EMBED >$OUTPUT
+               while(<>){s/[ \t]+$//;(split/\|/)[2]=~/(\w+)/;$h{$1}||print}' $EMBED >$OUTPUT
 else
   usage
 fi

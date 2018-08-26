@@ -1,0 +1,10 @@
+ChangeLog
+lib/Pod/Escapes.pm
+Makefile.PL
+MANIFEST
+MANIFEST.SKIP
+README
+t/01_about_verbose.t
+t/10_main.t
+t/15_name2charnum.t
+META.yml                                 Module meta-data (added by MakeMaker)

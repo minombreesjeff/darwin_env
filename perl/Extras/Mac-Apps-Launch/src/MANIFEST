@@ -1,9 +1,0 @@
-.cvsignore
-.releaserc
-Changes
-Launch.pm
-MANIFEST
-Makefile.PL
-README
-t/launch.t
-t/pod.t

@@ -1,0 +1,32 @@
+ChangeLog
+lib/Pod/Man.pm
+lib/Pod/ParseLink.pm
+lib/Pod/Text.pm
+lib/Pod/Text/Color.pm
+lib/Pod/Text/Overstrike.pm
+lib/Pod/Text/Termcap.pm
+Makefile.PL
+MANIFEST			This list of files
+META.yml			Module meta-data (added by MakeMaker)
+NOTES
+README
+scripts/pod2man.PL
+scripts/pod2text.PL
+t/basic.cap
+t/basic.clr
+t/basic.man
+t/basic.ovr
+t/basic.pod
+t/basic.t
+t/basic.txt
+t/color.t
+t/filehandle.t
+t/man.t
+t/parselink.t
+t/pod-parser.t
+t/termcap.t
+t/text-options.t
+t/text.t
+THANKS
+TODO
+VERSION

@@ -4,13 +4,13 @@
 #
 ################################################################################
 #
-#  $Revision: 12 $
+#  $Revision: 15 $
 #  $Author: mhx $
-#  $Date: 2004/08/17 14:00:34 +0200 $
+#  $Date: 2005/06/24 19:01:33 +0200 $
 #
 ################################################################################
 #
-#  Version 3.x, Copyright (C) 2004, Marcus Holland-Moritz.
+#  Version 3.x, Copyright (C) 2004-2005, Marcus Holland-Moritz.
 #  Version 2.x, Copyright (C) 2001, Paul Marquess.
 #  Version 1.x, Copyright (C) 1999, Kenneth Albanowski.
 #
@@ -211,15 +211,17 @@ sub ppcond
 sub trim_arg
 {
   my $in = shift;
+  my $remove = join '|', qw( NN NULLOK );
 
   $in eq '...' and return ($in);
 
   local $_ = $in;
   my $id;
- 
+
   s/[*()]/ /g;
   s/\[[^\]]*\]/ /g;
   s/\b(?:auto|const|extern|inline|register|static|volatile|restrict)\b//g;
+  s/\b(?:$remove)\b//;
   s/^\s*//; s/\s*$//;
 
   if( /^\b(?:struct|union|enum)\s+\w+(?:\s+(\w+))?$/ ) {
@@ -240,6 +242,7 @@ sub trim_arg
 
   # these don't matter at all
   s/\b(?:auto|extern|inline|register|static|volatile|restrict)\b//g;
+  s/\b(?:$remove)\b//;
 
   s/(?=<\*)\s+(?=\*)//g;
   s/\s*(\*+)\s*/ $1 /g;

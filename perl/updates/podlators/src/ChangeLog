@@ -1,0 +1,1104 @@
+2006-09-16  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 2.0.5 released.
+
+	* lib/Pod/Man.pm (parse_from_file): Accept and mostly ignore a
+	hash of options as the first option to parse_from_file.  Support
+	an option of -cutting and configure Pod::Simple to assume the POD
+	has already started.  This is for backward compatibility with
+	Pod::Parser.
+	* lib/Pod/Text.pm (parse_from_file): Likewise.
+	* t/pod-parser.t: New file to test the above.
+
+	* lib/Pod/Man.pm (guesswork): Recognize more uses of hyphens in
+	regular English text and allow them to be regular hyphens.
+	(preamble): Turn off hyphenation and, for nroff, justification
+	after the .TH macro since that's where groff turns them on.
+	* t/basic.t: Update for the new preamble.
+	* t/filehandle.t: Likewise.
+	* t/man.t: Likewise, and test the new hyphen behavior.
+	* t/basic.man: Adjust for the new hyphen behavior.
+
+	* t/pod.t: Add a new test for POD validity using Test::Pod (if
+	available).
+
+2006-03-08  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Man.pm: Stop mapping vertical bar to \(bv, since it
+	produces Unicode characters where they aren't desirable.  Remove
+	the preamble reference to the Tr string, which was never defined.
+
+2006-02-19  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 2.0.4 released.
+
+	* lib/Pod/Man.pm (devise_date): Pod::Simple's source_filename
+	method returns garbage if we're parsing from a file handle, so use
+	the current time if stating the returned input file fails.
+
+	* lib/Pod/Man.pm (parse_from_filehandle): New function for
+	backward compatibility, since Pod::Simple doesn't support the API
+	of Pod::Parser.
+	* lib/Pod/Text.pm (parse_from_filehandle): Likewise.
+	* t/filehandle.t: Test the parse_from_filehandle API.
+
+2006-01-28  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 2.0.3 released.
+
+	* t/basic.t: Pass in a file handle for Pod::Simple output and then
+	close it afterwards to work around Pod::Simple leaving file
+	handles open and preventing removal of temporary files on Windows.
+	This is temporary until a new Pod::Simple release offers a better
+	approach.
+	* t/color.t: Likewise.
+	* t/man.t: Likewise.
+	* t/termcap.t: Likewise.
+	* t/text-options.t: Likewise.
+	* t/text.t: Likewise.
+
+2006-01-25  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 2.0.2 released.
+
+	* t/man.t: Use iso-8859-1 encoding when writing out the temporary
+	test file and properly mark the encoding of the test that uses ISO
+	8859-1 characters.
+
+	* lib/Pod/Man.pm (parse_from_file): Flush the output file handle
+	rather than closing it.  Closing it is unexpected and could break
+	callers.
+	* lib/Pod/Text.pm (parse_from_file): Likewise.
+
+	* lib/Pod/Text/Termcap.pm (wrap): Use additional temporary
+	variables to avoid ${char}{0,$width}, which only works in very
+	recent Perls.
+	* lib/Pod/Text/Color.pm (wrap): Likewise.
+
+2006-01-20  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 2.0.1 released.
+
+	* Makefile.PL: Require Pod::Simple 3.04.
+
+	* lib/Pod/Man.pm (parse_from_file): New method.  Call reinit
+	before calling the parent parse_from_file method to preserve the
+	previous capability of reusing the same Pod::Man object for
+	multiple documents.  Close the output file handle after
+	Pod::Simple returns to force the output to flush.
+	* lib/Pod/Text.pm (parse_from_file): Likewise.
+
+	* scripts/pod2man.PL: Use a single object for all conversions.
+	* scripts/pod2text.PL: Likewise.  Also use parse_from_file, not
+	parse_file, since we're passing in two options.
+
+	* t/basic.t: Use a single formatting object and don't undef the
+	object after formatting.
+	* t/color.t: Likewise.
+	* t/man.t: Likewise.
+	* t/termcap.t: Likewise.
+	* t/text-options.t: Likewise.
+	* t/text.t: Likewise.
+
+	* lib/Pod/Text.pm (pod2text): Pod::Simple's parse_file method only
+	takes one argument.  Pass the second argument to output_fh
+	instead.
+
+	* lib/Pod/Man.pm (_handle_element_end): Add trailing parens to the
+	end method call to make Perl 5.005 happy.
+	* lib/Pod/Text.pm (_handle_element_end): Likewise.
+
+2005-11-28  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 2.00 released.
+
+	* Makefile.PL: Require Pod::Simple 3.03.
+
+	* t/termcap.t: Force a particular terminal configuration to get
+	reliable results and update the expected results; I'm not sure
+	what terminal I was testing with before.
+
+2005-03-19  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Man.pm: Reorder documentation sections to put SEE ALSO
+	last.
+	(devise_title): Strip vendor_perl as well as site_perl, reported
+	by Alexey Tourbin.
+
+	* lib/Pod/Man.pm (new): Fall back on fullstop_space_harden if
+	preserve_whitespace is not available.
+	* lib/Pod/Text.pm (new): Likewise.
+
+2004-12-31  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Text/Color.pm (wrap): Count text lengths correctly when
+	there are multiple adjacent escape sequences.  Use a temporary
+	variable to make the regex clearer.
+	* lib/Pod/Text/Termcap.pm (wrap): Likewise.
+	* t/color.t: New file.  Test wrapping.
+	* t/termcap.t: New file.  Test wrapping.
+
+	* t/basic.t: Skip the Pod::Text::Color tests if loading the module
+	failed due to a missing Term::ANSIColor.
+
+	* scripts/pod2man.PL: Move SEE ALSO to last in the section
+	ordering and move HISTORY directly after AUTHOR and before
+	COPYRIGHT AND LICENSE, based on discussion on perl5-porters.
+	Remove the obsolete caution against enclosing URLs in L<>.
+
+2004-06-08  Russ Allbery  <rra@stanford.edu>
+
+	* t/basic.txt: C<> without any content now produces quote marks.
+	* t/basic.cap: Likewise.
+	* t/basic.clr: Likewise.
+	* t/basic.ovr: Likewise.
+
+	* t/text-errors.t: Deleted.  These errors are now caught by
+	Pod::Simple instead, which is a better place to test them.
+
+	* t/text-options.t: Add a test suite for the code option.  Undef
+	the formatter after running it to make sure everything is closed
+	correctly.
+
+	* t/basic.t: Use the same interface for invoking all formatters,
+	since they're now all based on Pod::Simple.  Undef the formatter
+	after running it to make sure everything is closed correctly.
+	* t/text.t: Likewise.
+
+	* scripts/pod2man.PL: Change another documentation reference from
+	Pod::Parser to Pod::Simple.
+
+	* scripts/pod2text.PL: Add support for multiple pairs of input and
+	output files, similar to pod2man.  Change documentation references
+	from Pod::Parser to Pod::Simple.
+
+	* lib/Pod/Text.pm: Significantly reworked to use Pod::Simple
+	instead of Pod::Parser.  With the exception of better E<> handling
+	and different handling of C<> without any content, the new
+	formatter produces the same output as the old one.
+	* lib/Pod/Text/Color.pm: Likewise.
+	* lib/Pod/Text/Overstrike.pm: Likewise.
+	* lib/Pod/Text/Termcap.pm: Likewise.
+
+	* lib/Pod/Man.pm (_handle_element_end): Correctly handle the case
+	where a command handler returns only "0" as the result of a
+	command.
+
+2004-05-07  Russ Allbery  <rra@stanford.edu>
+
+	* scripts/pod2man.PL: Make the argument to the --release flag
+	optional.
+
+2004-02-14  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Man.pm: Refer to Pod::Simple in SEE ALSO.
+
+	* t/man.t: Destroy the parser after parsing each segment, since
+	this will force Pod::Simple to flush output.  Add many new tests
+	taken from the Pod::Simple work by Sean Burke and update the
+	results of a few tests for the new parser.
+
+	* t/basic.pod: Remove a variety of L<> tests involving extra
+	whitespace and newlines that aren't supported by perlpodspec to
+	avoid unimportant errors.
+	* t/basic.cap: Update.
+	* t/basic.clr: Update.
+	* t/basic.ovr: Update.
+	* t/basic.txt: Update.
+	* t/basic.man: Update and modify for the new results from the
+	Pod::Simple-based Pod::Man.
+
+	* t/basic.t: Destroy the parser after parsing each file, since
+	that will force Pod::Simple to flush output.
+
+	* scripts/pod2man.PL: Create a new parser for each file since
+	Pod::Simple parsers are not reusable.  Update documentation to
+	refer to Pod::Simple rather than Pod::Parser.
+
+	* lib/Pod/Man.pm: Completely rewritten, using input from Sean
+	Burke, to use Pod::Simple as the underlying parser instead of
+	Pod::Parser.  Other than minor and unimportant variations, the new
+	output is identical to the old except for some small bug fixes and
+	better handling of E<>.
+
+2003-07-09  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.27 released.
+
+	* lib/Pod/Text/Termcap.pm (initialize): Handle the case where the
+	HOME environment variable isn't set, mostly for Windows.
+
+2003-03-30  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.26 released.
+
+	* lib/Pod/Man.pm: Make sure the module returns 1, to keep Perl
+	5.8.0 happy.
+
+2003-01-04  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.25 released.
+
+	* lib/Pod/Man.pm (begin_pod): Initialize ITEMTYPES.
+	(textblock): Fix a comment about SHIFTWAIT and SHIFTS.
+	(cmd_over): Push unknown onto ITEMTYPES.
+	(cmd_back): Pop an item type off ITEMTYPES.
+	(cmd_item): Set the top element of ITEMTYPES if set to unknown
+	based on whether this item is =item/=item * or not.  Only map
+	asterisk to a real bullet if the item type for this =over/=back
+	pair is bullet.  Fix a bug where =item 0 was interpreted the same
+	as =item.
+	* t/man.t: Add tests for bullet handling with =item.
+
+2002-08-03  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.24 released.
+
+	* lib/Pod/Text.pm (initialize): Accept margin option and use it to
+	set the initial indentation level.
+	(item): Fix handling of the colon in the margin when alt is
+	specified, and make it work properly in the presence of a non-zero
+	margin setting.
+	(heading): Indent headings by the margin setting.
+	* lib/Pod/Text/Overstrike.pm (heading): Indent headings by the
+	margin setting.
+	* scripts/pod2text.PL: Accept and document the -m option to set
+	the left margin.
+	* t/text-options.t: New file.  Test margin and alt.
+
+2002-07-14  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.23 released.
+
+	* lib/Pod/Man.pm: Add a pointer to the module web site.
+	* lib/Pod/Text.pm: Likewise.
+	* lib/Pod/Text/Color.pm: Likewise.
+	* lib/Pod/Text/Overstrike.pm: Likewise.
+	* lib/Pod/Text/Termcap.pm: Likewise.
+	* lib/Pod/ParseLink.pm: Likewise, and reference Pod::Parser.
+	* scripts/pod2man.PL: Likewise, and remove a recommendation to
+	provide link text for L<>.
+	* scripts/pod2text.PL: Likewise, clean up some old-style L<> links
+	to work around bugs in Pod::Man and Pod::Text that have been
+	fixed, and reference Pod::Text::Overstrike.
+
+2002-06-23  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.22 released.
+
+	* lib/Pod/Man.pm (quote_literal): Tweak the regex for matching
+	numbers to not consider a single period to be a number.
+	* lib/Pod/Text.pm (seq_c): Likewise.
+	* t/man.t: Add a test for proper quoting of C<.>.
+	* t/text.t: New file.  Likewise.
+
+2002-02-16  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.21 released.
+
+	* lib/Pod/Text/Overstrike.pm (wrap): Fix the regex for wrapping
+	lines to use a non-backtracking section for each character to
+	avoid exponential backtracking on lines with a lot of markup.
+
+2002-01-27  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.20 released.
+
+	* t/basic.t: EBCDIC compatibility when testing Pod::Text::Termcap.
+	Convert the escape characters so that the test will match.  I'm
+	not entirely sure this doesn't paper over another problem, but
+	it's an improvement at least.
+
+	* lib/Pod/Text/Overstrike.pm (wrap): Use [\b] instead of \cH in
+	regexes to match backspaces, for platforms that use EBCDIC where
+	\b and \cH aren't the same character.
+	(strip_format): Likewise.
+
+2002-01-02  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.19 released.
+
+	* t/man.t: New file, testing special behavior of Pod::Man.
+
+	* lib/Pod/Man.pm (cmd_head1): Keep track of whether the current
+	section is the NAME section.
+	(collapse): Don't apply guesswork to the text inside the NAME
+	section since it may get pulled out by programs like catman.
+	(begin_pod): No longer output .UC after the .TH macro; catman
+	doesn't like anything between the NAME section and .TH and .UC
+	doesn't appear to actually do anything on any modern platform.
+	Also initialize IN_NAME here.
+	* t/basic.man: Adjust to reflect lack of guesswork in the NAME
+	section and removal of the .UC request.
+
+2002-01-01  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Text/Termcap.pm (initialize): Terminal speed should be a
+	number, not a string.  Also fall back on a hard-coded terminal
+	speed if getospeed doesn't work.
+
+2001-12-31  Russ Allbery  <rra@stanford.edu>
+
+	* t/basic.pod: Add a verbatim paragraph right before a heading,
+	which was previously mishandled by Pod::Man.
+	* t/basic.cap: Update.
+	* t/basic.clr: Update.
+	* t/basic.man: Update.
+	* t/basic.ovr: Update.
+	* t/basic.txt: Update.
+
+	* lib/Pod/Man.pm (verbatim): Remove the blank line from .Ve in the
+	preamble and set NEEDSPACE here instead, as this works better
+	before headings and in other, similar situations.
+
+	* t/text-errors.t: New file, testing errors issued by Pod::Text.
+
+	* lib/Pod/Text.pm (interior_sequence): Fix error reporting for
+	unknown sequences; the code was initializing $seq twice.
+	(command): Fix the unknown command warning to use a colon rather
+	than quotes like the other warnings and update the documentation
+	to match.
+	(interior_sequence): Fix the unknown formatting code warning to
+	match the documentation.
+
+2001-11-30  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.18 released.
+
+	* lib/Pod/ParseLink.pm: Escape L<> in the NAME section of the
+	documentation.
+
+2001-11-27  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Text/Termcap.pm (initialize): Fall back on a hard-coded
+	terminal speed if POSIX::Termios doesn't work, such as on VMS.
+
+	* VERSION: podlators 1.17 released.
+
+	* lib/Pod/Text/Color.pm: Change all documentation references from
+	interior sequences to formatting codes to match the terminology of
+	perlpodspec.
+	* lib/Pod/Text/Overstrike.pm: Likewise.
+
+	* lib/Pod/Text.pm: Change all documentation references from
+	interior sequences to formatting codes to match the terminology of
+	perlpodspec.
+	(interior_sequence): Change the unknown sequence warning to
+	unknown formatting code.
+
+	* lib/Pod/Man.pm: Change all documentation references from
+	interior sequences to formatting codes to match the terminology of
+	perlpodspec.  Move the extra *roff code to NOTES instead of
+	carrying it around inside the module.
+	(sequence): Return references to arrays rather than references to
+	scalars for already-formatted text because there are too many odd
+	bugs with scalar references in older versions of Perl.  No longer
+	bless references since the current Pod::Parser doesn't require it.
+	Pass a third argument to collapse().  Change the unknown sequence
+	warning to unknown formatting code.
+	(collapse): Simplify and handle references to arrays rather than
+	references to scalars.  Take a third argument that says whether to
+	do C<> cleanup operations rather than checking $literal > 1.
+
+	* Makefile.PL: Require version 1.13 of Pod::Parser so that
+	Pod::Man doesn't have to bless already-formatted strings.
+
+	* lib/Pod/Text/Termcap.pm: Fix a documentation typo.  =head should
+	be =head1.
+
+2001-11-26  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.16 released.
+
+	* t/basic.t: Use an @INC path of ../lib for Perl core tests.
+	(source_path): New function to find the test source files, needed
+	when testing as Part of Perl core.  Used for all source file
+	paths.
+
+	* VERSION: podlators 1.15 released.
+
+	* scripts/pod2man.PL: Delete the lax option before calling
+	Pod::Man and document that it's obsolete and that podchecker
+	should be used instead.  Mark some man page references with an
+	explicit L<> and remove unnecessary anchor text on L<> references
+	to other POD modules.  Add podchecker to the references section.
+
+	* lib/Pod/Man.pm: Documentation fixes.  Remove the mention of lax
+	from BUGS since podchecker now handles that.  Add mentions of
+	turning off guesswork and proper 8-bit character handling.  Move
+	some notes about fragile heuristics to a CAVEATS section.
+
+2001-11-25  Russ Allbery  <rra@stanford.edu>
+
+	* t/basic.t: Set TERM and TERMCAP per the Term::Cap documentation
+	to obtain reproducible results for the Pod::Text::Termcap test.
+
+	* lib/Pod/Text/Termcap.pm (initialize): Wrap the call into
+	Term::Cap with eval because it throws exceptions if the terminal
+	can't be found.  Fall back on the ANSI escape sequences rather
+	than dying if the termcap entry is incomplete.  Note the fallback
+	in the documentation.
+
+2001-11-23  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.14 released.
+
+	* t/parselink.t: New file.
+	* t/basic.t: New file.
+	* t/basic.cap: New file.
+	* t/basic.clr: New file.
+	* t/basic.ovr: New file.
+	* t/basic.man: New file.
+	* t/basic.pod: New file.
+	* t/basic.txt: New file.
+
+	* lib/Pod/Text/Overstrike.pm (strip_format): New function.
+	(seq_b): Use it.
+	(seq_f): Likewise.
+	(seq_i): Likewise.
+	(heading): New override to prevent excessive interpolation, since
+	it's necessary to interpolate before formatting or the formatting
+	codes end up in the output.
+	(cmd_head1): Simplify, interpolate here, and use strip_format.
+	(cmd_head2): Likewise.
+	(cmd_head3): Likewise.
+	(cmd_head4): New function, doing the same as cmd_head3().
+
+	* lib/Pod/Man.pm (initialize): Move initialization of per-file
+	variables from here...
+	(begin_pod): ...to here.  Remove WEIRDINDENT, add SHIFTS, and
+	rename NEWINDENT to SHIFTWAIT.
+	(textblock): Maintain a stack of shifts rather than using
+	WEIRDINDENT.  Rename NEWINDENT to SHIFTWAIT.
+	(cmd_over): Likewise.
+	(cmd_back): Likewise.
+	(cmd_item): Likewise.
+	(cmd_head3): Use font escapes rather than .I to avoid strange
+	problems with quoting, at least for =head3.  =head1 and =head2
+	likely still have troubles with repeated double-quotes.
+	(outindex): Accumulate output in an array to avoid some duplicate
+	code.
+	(switchquotes): Fix all fixed-width font changes for nroff, not
+	just the simple ones, and don't hard-code the value of any
+	fixed-width font.
+
+2001-11-22  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/ParseLink.pm (_parse_section): Fix a bug in the handling
+	of link text that's entirely in quotes.
+
+	* lib/Pod/Text.pm (heading): New function, for generic code for
+	all headings.  loose now applies to all headers, not just =head1.
+	Also output any =item tags left open.
+	(cmd_head1): Use it.
+	(cmd_head2): Likewise.
+	(cmd_head3): Likewise.
+	(cmd_head4): Likewise.
+	(cmd_over): Output any =item tags left open.
+	(cmd_back): Likewise.
+	(command): No longer handle open =item tags here since this is now
+	handled by individual commands.  Fixes handling of =for or
+	=begin/=end in =item paragraphs.
+	(cmd_item): Default to a tag of "*" if none is given.
+	(item): Insert some whitespace for empty item paragraphs to keep
+	them from blending into subsequent text.  Fix -w warnings.
+
+	* lib/Pod/ParseLink.pm: Documentation fixes.  Double quotes are
+	only removed around sections, not names.  Text entirely enclosed
+	in double quotes is interpreted as a link to a section.  Expand
+	the explanation of formatting codes inside L<> codes.
+	(_parse_section): Avoid -w warnings on empty page or section
+	components.
+	(parselink): Avoid -w warnings on empty name components.
+
+	* lib/Pod/Man.pm (begin_pod): When intuiting the man page name for
+	a module, also strip $^O by itself as a directory component even
+	when not preceeded or followed by a dash and other text.
+
+2001-11-15  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.13 released.
+
+	* lib/Pod/Man.pm (guesswork): Minor tweak to make the hyphen
+	handling -w clean.
+
+	* VERSION: podlators 1.12 released.
+
+2001-11-14  Russ Allbery  <rra@stanford.edu>
+
+	* Makefile.PL: Require at least version 0.8 of File::Spec.
+
+	* lib/Pod/Man.pm: Use L<> for all man page references in the
+	documentation that should be highlighted.  Switch the rest to bold
+	versions of the program name.  Change func(n) to func(3) in the
+	example of things that are automatically formatted so that it will
+	be formatted.  Remove from BUGS the note that some of the path
+	mangling assumes Unix directory separators.  Don't give anchor
+	text for L<> links that no longer require it.
+	* lib/Pod/Text.pm: Update the documentation to use now-allowable
+	POD constructs like C<< >>.  Don't escape angle brackets that
+	don't require escaping.  Don't give anchor text for L<> links that
+	no longer require it.
+	* lib/Pod/Text/Color.pm: Likewise.
+	* lib/Pod/Text/Overstrike.pm: Likewise.
+	* lib/Pod/Text/Termcap.pm: Likewise.
+
+	* lib/Pod/Text.pm (interior_sequence): Inside S<>, convert all
+	whitespace to non-breaking spaces, not just spaces.
+
+	* lib/Pod/Man.pm (guesswork): Rewrite the handling of dashes and
+	hyphens.  Be much more conservative about which hyphens are turned
+	into dashes, and make all hyphens non-breaking unless we can be
+	fairly sure that they're inside normal words.
+
+	* lib/Pod/Man.pm (textblock): Remove the special handling of
+	consecutive L</section> links.
+	(sequence): Defer expansion of formatting escapes inside L<> until
+	L<> is processed.  Use Pod::ParseLink to parse the link text and
+	determine the text used.  Expand formatting escapes in the link
+	text after the final text is determined.  Surround URLs with angle
+	brackets in the output.
+	(buildlink): Deleted.
+	(collapse): Only escape backslashes for C<> codes.
+	* lib/Pod/Text.pm (textblock): Remove the special handling of
+	consecutive L</section> links.
+	(interior_sequence): Defer expansion of formatting escapes inside
+	L<> until L<> is processed.  Pass the Pod::InteriorSequence object
+	to seq_l.
+	(seq_l): Use Pod::ParseLink to parse the link text and determine
+	the text used.  Expand formatting escapes in the link text after
+	the final text is determined.  Surround URLs with angle brackets
+	in the output.
+	* lib/Pod/ParseLink.pm: New file.
+
+	* lib/Pod/Man.pm (initialize): Initialize NEWINDENT.
+	(textblock): Handle indentation of =item-less =over/=back blocks
+	if NEWINDENT is set.
+	(cmd_over): Set NEWINDENT.
+	(cmd_back): Clear NEWINDENT.
+	(cmd_item): Likewise.
+
+	* lib/Pod/Man.pm (begin_pod): Include the version of Pod::Parser
+	in the header.
+
+	* lib/Pod/Man.pm: Support E<apos>, E<nbsp>, and E<shy>.
+	* lib/Pod/Text.pm: Support E<apos> and E<nbsp> and treat E<shy> as
+	an empty string.
+
+2001-11-13  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Man.pm (begin_pod): Completely rewrite the name parsing
+	code for modules to use File::Spec.  In the process, fix a bug in
+	dealing with the new three-component version number directories.
+	Swap the order of date and release in the .TH line to better
+	comply with the man macro documentation.
+
+2001-11-04  Russ Allbery  <rra@stanford.edu>
+
+	* scripts/pod2man.PL: Add the --name option and documentation.
+	* lib/Pod/Man.pm: Add documentation for the name option, which was
+	already implemented.
+	(begin_pod): Only try to determine a module name from the path for
+	the man page name if the man page we're generating is in section
+	3.  No longer insert a timestamp into the generated man page; it
+	just causes unnecessary differences and merge conflicts.
+
+2001-10-20  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.11 released.
+
+	* scripts/pod2man.PL: Add --verbose to print out each output file
+	as it is generated.  Silence -w warnings about the magic to exec
+	Perl if run under a shell.
+	* scripts/pod2text.PL: Silence -w warnings likewise.
+
+	* lib/Pod/Text/Overstrike.pm (wrap): Better handle the case where
+	a highlighted portion of text ends a line.
+
+	* lib/Pod/Text.pm: Add the code option to include the non-POD text
+	of the input file and document it.
+	(initialize): Pass -want_nonPODs to Pod::Parser	if code is set.
+	(preprocess_paragraph): Call output_code for any paragraphs
+	received that aren't part of the POD.
+	(output_code): New function.
+	* lib/Pod/Text/Color.pm (output_code): New function.
+	* lib/Pod/Text/Overstrike.pm (output_code): New function.
+	* lib/Pod/Text/Termcap.pm (output_code): New function.
+	* scripts/pod2text.PL: Add support and documentation for --code.
+
+	* lib/Pod/Man.pm (outindex): No output was being emitted for X<>
+	sequences due to a misplaced my.
+	(switchquotes): Must use .ie for if statements containing a .el
+	clause in *roff; .if won't work.
+
+2001-07-19  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Man.pm (sequence): Turned carps for unknown escapes and
+	unknown sequences into warnings, suppressed the Perl file and line
+	number, and added the file and line number for the POD data.
+	(cmd_back): Likewise for unmatched =back errors.
+	* lib/Pod/Text.pm (interior_sequence): Likewise for unknown
+	escapes and unknown sequences.
+	(cmd_back): Likewise for unmatched =back errors.
+
+2001-07-10  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.10 released.
+
+	* scripts/pod2man.PL: Added a description of the COPYRIGHT AND
+	LICENSE section, add a mention of a mailing list in SEE ALSO, and
+	mention that large logs are better kept separate from HISTORY in
+	the description of a standard manual page.  Added a COPYRIGHT AND
+	LICENSE section for pod2man.
+	* scripts/pod2text.PL: Added a COPYRIGHT AND LICENSE section to
+	the documentation.
+
+	* lib/Pod/Man.pm: Changed LICENSE to COPYRIGHT AND LICENSE.
+	* lib/Pod/Text.pm: Likewise.
+
+	* lib/Pod/Text/Color.pm: Added a COPYRIGHT AND LICENSE section to
+	the documentation.
+	* lib/Pod/Text/Overstrike.pm: Likewise.
+	* lib/Pod/Text/Termcap.pm: Likewise.
+
+	* lib/Pod/Text.pm (seq_c): Add heuristics to decide whether or not
+	to quote the argument of C<>.
+
+	* lib/Pod/Man.pm (switchquotes): Remove font changes for nroff to
+	work around a bug in the Solaris 2.6 version of nroff's handling
+	of \fP in headings.  No longer add an extra level of quoting for
+	=item; it isn't necessary.
+
+	* lib/Pod/Man.pm (sequence): Call quote_literal to handle C<>.
+	(quote_literal): New function, handling the decision of whether or
+	not to put quotes around the argument of C<>.
+
+	* lib/Pod/Man.pm: Added a LICENSE section to the documentation.
+	* lib/Pod/Text.pm: Likewise.
+
+	* lib/Pod/Man.pm (guesswork): Remove the logic turning PI into a
+	pretty pi character; it produces too many false positives.
+
+	* lib/Pod/Man.pm: Removed the definition .Ip from the preamble.
+	Removed .bd B 3 from the preamble; this isn't part of the accent
+	mark definitions but instead changes the way bolding is done,
+	confusing some other translators.
+	(cmd_item): Emit .IP instead of .Ip.
+
+2001-04-09  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.09 released.
+
+	* lib/Pod/Man.pm (guesswork): Fine-tune.  Don't allow colons after
+	sequences to put in small caps since they're already handled by
+	being rolled into the sequence and were causing weird things to
+	happen in references to functions.  Allow small caps before an
+	open paren.  Teach the handling of functions and manual page
+	references about small caps escapes, and be pickier about what
+	constitutes a manual page reference.
+
+	* lib/Pod/Text.pm: Fix again the incorrect mappings for E<Iacute>
+	and E<iacute>, and this time for E<Igrave> and E<igrave> too.
+	Reported by Sean Burke.
+
+2001-02-09  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.08 released.
+
+	* lib/Pod/Text.pm (seq_l): Output anything that looks like a URL
+	verbatim rather than interpreting it as a manual page reference.
+	* lib/Pod/Man.pm (buildlink): Likewise.
+
+2001-01-16  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.07 released.
+
+	* lib/Pod/Man.pm (begin_pod): Quote the file name if it contains
+	spaces.
+	(cmd_head1): Remove newlines.
+	(cmd_head2): Likewise.
+	(cmd_head3): Likewise.
+	(cmd_head4): Likewise.
+
+2000-12-25  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.06 released.
+
+	* scripts/pod2text.PL: Add -o or --overstrike to use
+	Pod::Text::Overstrike as the formatter.
+
+	* lib/Pod/Man.pm (switchquotes): =item text requires another level
+	of quoting of double quotes, which was already present but not
+	working for C<> text because it was in the wrong order.  Fixed and
+	more comments added.
+
+	* lib/Pod/Text/Color.pm: Use a static version number rather than
+	the CVS revision.
+	* lib/Pod/Text/Termcap.pm: Likewise.
+
+	* lib/Pod/Text/Overstrike.pm: New file.  Contributed by Joe Smith
+	<Joe.Smith@inwap.com>.
+
+2000-11-18  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.05 released.
+
+	* scripts/pod2man.PL: Allow pod2man to take multiple pairs of
+	input and output files on the command line to decrease the time
+	that it takes to process all of Perl's documentation.
+
+	* lib/Pod/Man.pm (textmapfonts): New function, like mapfonts but
+	without the last change to work around a Solaris 2.6 nroff bug.
+	(textblock): Use textmapfonts instead of mapfonts.
+	(cmd_head4): Likewise.
+	(cmd_item): Likewise.
+
+	* lib/Pod/Man.pm (switchquotes): Turned into a method rather than
+	a static function.  Switch \*C` and \*C' sequences from C<> as
+	well as literal double-quotes if the quote character contains
+	double quotes.  Not doing this was causing weird output on some
+	systems in some circumstances.
+	(cmd_head1): Call of switchquotes changed.
+	(cmd_head2): Likewise.
+	(cmd_item): Likewise.
+
+	* lib/Pod/Man.pm (mapfonts): Use \fP to switch back to the default
+	font rather than changing back to \fR so that font changes work
+	correctly in headings using a different font.  Sprinkle \fP
+	through all font changes so that the default font is always the
+	"previous" font so that the above works.
+
+	* lib/Pod/Man.pm (cmd_head3): New function.
+	(cmd_head4): New function.
+	* lib/Pod/Text.pm: (cmd_head3): New function.
+	(cmd_head4): New function.
+
+	* lib/Pod/Text.pm (initialize): Change the default quote character
+	for C<> to be double quotes rather than matched left/right single
+	quotes.
+
+2000-10-09  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.04 released.
+
+	* lib/Pod/Man.pm: Output .PD 0 and .PD around repeated =item tags
+	so that they're formatted without intervening blank lines,
+	improving formatting of e.g. perlfunc.pod.
+	(initialize): Initialize ITEMS to 0.
+	(verbatim): Call makespace unconditionally.
+	(textblock): Likewise.
+	(cmd_head1): Output .PD and reset ITEMS if ITEMS > 1.
+	(cmd_head2): Likewise.
+	(cmd_item): Count the number of consecutive =item commands and
+	output .PD 0 before the second.
+	(makespace): Handle the check for NEEDSPACE here rather than in
+	the caller and output .PD and reset ITEMS if ITEMS > 1.
+
+	* lib/Pod/Text.pm: Fix incorrect mappings for E<Iacute> and
+	E<iacute>, reported by Sean Burke.
+
+2000-10-08  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Man.pm (initialize): Change the default quote character
+	for C<> to be double quotes rather than matched left/right single
+	quotes.
+
+	* lib/Pod/Text.pm (command): Fixed a shadowed variable warning.
+	* lib/Pod/Man.pm (command): Likewise.
+
+2000-09-03  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.03 released.
+
+	* scripts/pod2man.PL: Added a new --quotes option.
+	* scripts/pod2text.PL: Likewise.
+
+	* lib/Pod/Man.pm: Changed the preamble to allow configurable quote
+	characters around C<> text.
+	(initialize): Parse the new quotes option to set the configurable
+	quote characters.
+	(begin_pod): Substitute the quote characters into the preamble.
+	Make a new copy of the preamble for each file so that the
+	fixed-width font and the quote characters may change between
+	different Pod::Man objects and different files.
+
+	* lib/Pod/Text.pm (initialize): Added support for a quotes option
+	to specify what quotes to use around C<> text.
+	(seq_c): Use the configurable quote characters.
+
+	* lib/Pod/Text.pm (command): Check using can() before calling cmd_
+	handlers and report a nice error when encountering an unknown
+	paragraph command.
+	* lib/Pod/Man.pm (command): Likewise.
+
+2000-09-02  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Text.pm: Add sol and verbar to the escapes.
+	* lib/Pod/Man.pm: Likewise.
+
+	* lib/Pod/Text.pm (pod2text): When given two arguments, was
+	incorrectly assigning to $_[0], causing other strange problems.
+
+	* lib/Pod/Man.pm (cmd_item): Fix the regex for stripping bullets
+	from index entries so that it doesn't strip a leading 'o'.
+
+2000-04-30  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Man.pm: In the prelude, terminate the .IX definition
+	with .. instead of ".    ." for groff.
+
+2000-04-25  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.02 released.
+
+	* lib/Pod/Man.pm (sequence): Pass a special flag to collapse() for
+	C<> blocks rather than trying to fix up hyphens and underscores.
+	(collapse): Fix hyphens and underscores for literal C<> block
+	content.
+
+2000-04-09  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Man.pm (sequence): Fix hyphens and underscores in only
+	those children of a C<> sequence that haven't already had
+	guesswork applied to them.
+
+2000-03-30  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.01 released.
+
+	* Makefile.PL: Install the modules in the Perl core area if the
+	Perl version is 5.6.0 or higher.
+
+2000-03-18  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Man.pm (begin_pod): Strip a leading lib/ from a file
+	name for module man pages, needed for ExtUtils::MakeMaker.
+
+2000-03-16  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 1.00 released.
+
+	* Makefile.PL: pod2roff renamed to pod2man.
+
+	* lib/Pod/Text.pm: Use a static version number, add the remaining
+	ISO 8859-1 HTML entities (from Tim Jenness).
+
+	* lib/Pod/Man.pm (protect): Be even more aggressive; protect any
+	line starting with a backslash.
+	(cmd_item): Replace embedded newlines in titles with spaces.
+
+	* scripts/pod2man.PL: Hide '-' arguments from Getopt::Long so that
+	Pod::Parser will interpret them as STDIN or STDOUT.  Remove
+	needless use vars.
+	* scripts/pod2text.PL: Likewise.
+
+	* scripts/pod2text.PL: Don't default to Pod::Text::Termcap even if
+	STDOUT is a tty until it works right on Windows, VMS, etc.
+
+	* scripts/pod2man.PL: Change Getopt::Long config from bundling to
+	bundling_override so that options like -center work for backwards
+	compatibility.
+
+2000-03-07  Russ Allbery  <rra@stanford.edu>
+
+	* scripts/pod2man.PL: Change pod2txt to pod2man in SYNOPSIS.
+
+2000-03-06  Russ Allbery  <rra@stanford.edu>
+
+	* scripts/pod2man.PL: Renamed from pod2roff.PL as this has been
+	incorporated in Perl core.  Updated self-references in the
+	documentation, changed "stati" to "statuses."
+
+	* lib/Pod/Man.pm: Set version number to 1.00, change references to
+	pod2roff to pod2man in the documentation, and remove the note about
+	this module replacing pod2man in Perl core.
+
+	* lib/Pod/Man.pm (initialize): Use "perl v5.6.0" instead of "perl
+	5.6, patch 0" for the default release string, handle both pre-5.6
+	and post-5.6 version numbering schemes.
+	(protect): Allow for two-character fonts.
+	(begin_pod): Zero-pad the month and day in the modification date.
+	(sequence): Add a temporary variable for L<> text rather than
+	blessing the sub return to work around a 5.6 bug.
+	(guesswork): $3 no longer used in small-caps regex, remove to
+	avoid warnings under -w.
+
+2000-03-05  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Man.pm (protect): Protect leading periods following font
+	escapes as well.
+	(initialize): Avoid warnings when center, date, or release aren't
+	set.
+	(begin_pod): Make filename munging safe even when $* is set and
+	the filenames contain embedded newlines.
+	(textblock): Use a temporary variable for paragraph text, fix the
+	regex to concatenate multiple L<> section links and fix whitespace
+	handling for it around "and".
+	(sequence): Add a temporary variable workaround so that Z<> works
+	correctly with current Perl.
+	(cmd_for): Don't extract the line number when we don't use it.
+
+1999-10-07  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 0.08 released.
+
+	* lib/Pod/Text.pm: Export pod2text() for backwards compatibility.
+
+	* lib/Pod/Text.pm (interior_sequence): Add support for numeric E<>
+	escapes.
+	* lib/Pod/Man.pm (sequence): Likewise.
+
+1999-09-27  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Man.pm (buildlink): Links to sections had doubled quote
+	marks.
+
+	* scripts/pod2roff.PL: Pod::Parser constructors take an expanded
+	hash, not a hash ref.
+
+1999-09-25  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 0.07 released.
+
+	* lib/Pod/Man.pm: Changed the parsing model so that rather than
+	deferring E<> escapes until just before output, *roff output is
+	generated by the interior sequence parsing and the result is
+	passed up the parse trees as Pod::Man::String objects instead of
+	scalars to mark the output as already processed.  In the process,
+	cleaned up what *roff escaping and guesswork is applied where and
+	cleaned up the whole process of applying guesswork.  Also improved
+	the small caps guesswork to allow for more cases, including
+	several adjacent all caps words, and fixed some bugs with the link
+	text generation for man page references.  Improved the escaping of
+	dashes and hyphens to use a single pass, improved the index
+	generation slightly, and fixed a few places that were clobbering
+	the caller's $_.
+
+1999-09-20  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 0.06 released.
+
+	* scripts/pod2roff.PL: Expanded the man page documentation to take
+	into account suggestions from Larry Virden.  Added examples for
+	ENVIRONMENT, more examples for OPTIONS, better examples for
+	subsections in DESCRIPTION, more details on ERRORS, a plea for a
+	method of fixing problems in DIAGNOSTICS as well as what the
+	message means, a plea for an explanation of examples in EXAMPLES,
+	a plea for documenting files that are modified in FILES, a mention
+	of a program web site in SEE ALSO, a mention of e-mail addresses
+	in AUTHORS, the AVAILABILITY section, and a note about markup
+	including L<> issues with e-mail addresses and URLs.
+
+	* lib/Pod/Man.pm: Added a BUGS entry for index entries for stuff
+	in NAME.
+
+	* lib/Pod/Text.pm: =begin text blocks are now output verbatim
+	rather than interpreted as POD.  Documented the oddity with
+	Ctrl-As as a restriction.
+
+	* Makefile.PL: pod2txt renamed to pod2text.
+
+	* scripts/pod2roff.PL: Exit on Getopt::Long errors.
+
+	* scripts/pod2text.PL: Renamed to pod2text and updated for the
+	renaming of Pod::PlainText to Pod::Text.  Added an explicit check
+	for Term::ANSIColor if -c was given.  Added documentation of -h,
+	expanded the DIAGNOSTICS section to include directly generated
+	error messages and the most common Getopt::Long message.
+
+	* lib/Pod/Text/Termcap.pm: Updated for the renaming of
+	Pod::PlainText to Pod::Text.
+
+	* lib/Pod/Text/Color.pm: Updated for the renaming of
+	Pod::PlainText to Pod::Text, added BUGS note that the
+	implementation is rather incomplete and a note in DESCRIPTION that
+	it relies on Term::ANSIColor.
+
+	* lib/Pod/Text.pm: Renamed to Pod::Text, various comment cleanups,
+	always treat =for paragraphs as verbatim text, cleaned up the
+	documentation a little, and added two more diagnostics and a
+	cross-reference to pod2text(1).  Bumped revision to 2.0 to be
+	larger than the old Pod::Text.
+
+	* lib/Pod/Man.pm: Renamed to Pod::Man from Pod::Roff, since there
+	is no standard Pod::Man module to worry about conflicting with.
+
+	* scripts/pod2roff.PL: Cut down on some information redundant with
+	Pod::Man's documentation, changed for the renaming of Pod::Roff to
+	Pod::Man, and added a BUGS section noting a few currently unfixed
+	problems.
+
+	* lib/Pod/Roff.pm: Inherit from Pod::Parser instead of
+	Pod::Select, get the date from our input file by default, be even
+	more conservative about small caps but put AT&T in small caps, and
+	added documentation.
+
+	* Makefile.PL: Add pod2roff to the scripts, improve handling of
+	scripts a little.
+
+1999-09-19  Russ Allbery  <rra@stanford.edu>
+
+	* lib/Pod/Roff.pm: New file.
+	* scripts/pod2roff.PL: New file.
+
+1999-09-18  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 0.05 released.
+
+	* lib/Pod/Text/Color.pm: Pod::SimpleText changed to Pod::PlainText
+	in one final spot in the documentation.
+
+1999-08-30  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 0.04 released.
+
+	* Makefile.PL: Use File::Spec to build file paths for portability,
+	removed the dist setting since current Perls get this right, and
+	added the magic to cope with pod2txt as a .PL file.
+
+	* scripts/pod2txt.PL: Added the .PL magic to fix the shebang line
+	that will be necessary when this script is part of Perl core.
+
+	* VERSION: podlators 0.03 released.
+
+	* lib/Pod/Text/Color.pm: Pod::SimpleText changed to Pod::PlainText
+	everywhere.
+	* lib/Pod/Text/Termcap.pm: Likewise.
+
+	* scripts/pod2txt: Pod::SimpleText changed to Pod::PlainText
+	everywhere, added documentation that Pod::Text::Termcap is used by
+	default if STDOUT is a tty, and clarified the documentation of
+	--loose.
+
+1999-07-29  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: podlators 0.02 released.
+
+	* lib/Pod/PlainText.pm: Added a pod2text() function for backwards
+	compatibility.
+
+	* lib/Pod/Text/Termcap.pm: Switch from using Pod::SimpleText to
+	using Pod::PlainText.
+	* lib/Pod/Text/Color.pm: Likewise.
+
+	* lib/Pod/PlainText.pm: Properly wrap multi-line =item tags.
+
+	* Makefile.PL: Changed the name of the package to podlators.
+
+	* lib/Pod/PlainText.pm: Fixed a spurious space with =for text
+	commands, check the content of sequences against '' specifically
+	rather than testing truth so that it does the right thing with 0,
+	process sequences for =head headings, and changed the name from
+	SimpleText to PlainText.  Also speeded up some sequences slightly.
+
+1999-06-12  Russ Allbery  <rra@stanford.edu>
+
+	* VERSION: Pod::SimpleText 0.01 released.
+
+	* lib/Pod/SimpleText.pm: Minor documentation fixes.
+
+	* scripts/pod2txt: New file.
+
+	* lib/Pod/SimpleText.pm: New file.
+	* lib/Pod/Text/Color.pm: New file.
+	* lib/Pod/Text/Termcap.pm: New file.

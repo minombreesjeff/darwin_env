@@ -1,5 +1,0 @@
-ICInstance		T_PTROBJ
-ICMapEntry		T_RECORDOBJ
-ICPerm			T_IV
-ICAttr			T_IV
-ComponentInstance	T_PTR
